@@ -136,6 +136,29 @@ where
     }
 
     fn execute(&self, plan: &ReleasePlan, dry_run: bool) -> Result<(), ReleaseError> {
+        if dry_run {
+            let changelog_body = self.format_changelog(plan)?;
+            eprintln!("[dry-run] Would create tag: {}", plan.tag_name);
+            eprintln!("[dry-run] Would push tag: {}", plan.tag_name);
+            if self.vcs.is_some() {
+                eprintln!(
+                    "[dry-run] Would create GitHub release for {}",
+                    plan.tag_name
+                );
+            }
+            for hook in &self.config.hooks.pre_release {
+                eprintln!("[dry-run] Would run pre-release hook: {hook}");
+            }
+            for hook in &self.config.hooks.post_tag {
+                eprintln!("[dry-run] Would run post-tag hook: {hook}");
+            }
+            for hook in &self.config.hooks.post_release {
+                eprintln!("[dry-run] Would run post-release hook: {hook}");
+            }
+            eprintln!("[dry-run] Changelog:\n{changelog_body}");
+            return Ok(());
+        }
+
         let run_failure_hooks = |err: ReleaseError| -> ReleaseError {
             let _ = self
                 .hooks
@@ -150,19 +173,6 @@ where
 
         // 2. Format changelog
         let changelog_body = self.format_changelog(plan).map_err(&run_failure_hooks)?;
-
-        if dry_run {
-            eprintln!("[dry-run] Would create tag: {}", plan.tag_name);
-            eprintln!("[dry-run] Would push tag: {}", plan.tag_name);
-            if self.vcs.is_some() {
-                eprintln!(
-                    "[dry-run] Would create GitHub release for {}",
-                    plan.tag_name
-                );
-            }
-            eprintln!("[dry-run] Changelog:\n{changelog_body}");
-            return Ok(());
-        }
 
         // 3. Write changelog file if configured
         if let Some(ref changelog_file) = self.config.changelog.file {
@@ -514,16 +524,18 @@ mod tests {
 
     #[test]
     fn execute_dry_run_no_side_effects() {
-        let s = make_strategy(
-            vec![],
-            vec![raw_commit("feat: something")],
-            ReleaseConfig::default(),
-        );
+        let mut config = ReleaseConfig::default();
+        config.hooks.pre_release = vec!["echo pre".into()];
+        config.hooks.post_tag = vec!["echo post-tag".into()];
+        config.hooks.post_release = vec!["echo post-release".into()];
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
         s.execute(&plan, true).unwrap();
 
         assert!(s.git.created_tags.lock().unwrap().is_empty());
         assert!(s.git.pushed_tags.lock().unwrap().is_empty());
+        assert!(s.hooks.run_log.lock().unwrap().is_empty());
     }
 
     #[test]

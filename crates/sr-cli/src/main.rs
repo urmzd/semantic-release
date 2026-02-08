@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use sr_core::changelog::DefaultChangelogFormatter;
 use sr_core::commit::DefaultCommitParser;
 use sr_core::config::ReleaseConfig;
@@ -60,6 +60,12 @@ enum Commands {
         /// Overwrite the config file if it already exists
         #[arg(long)]
         force: bool,
+    },
+
+    /// Generate shell completions
+    Completions {
+        /// Shell to generate completions for
+        shell: clap_complete::Shell,
     },
 }
 
@@ -215,11 +221,36 @@ fn main() -> anyhow::Result<()> {
 
         Commands::Plan { format } => {
             let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            let formatter = DefaultChangelogFormatter::new(
+                config.changelog.template.clone(),
+                config.types.clone(),
+                config.breaking_section.clone(),
+            );
             let strategy = build_local_strategy(config)?;
             let plan = strategy.plan()?;
+
+            let today = sr_core::release::today_string();
+            let entry = sr_core::changelog::ChangelogEntry {
+                version: plan.next_version.to_string(),
+                date: today,
+                commits: plan.commits.clone(),
+                compare_url: None,
+            };
+            let changelog = sr_core::changelog::ChangelogFormatter::format(&formatter, &[entry])?;
+
             match format {
                 PlanFormat::Json => {
-                    println!("{}", serde_json::to_string_pretty(&plan)?);
+                    #[derive(serde::Serialize)]
+                    struct PlanOutput<'a> {
+                        #[serde(flatten)]
+                        plan: &'a sr_core::release::ReleasePlan,
+                        changelog: String,
+                    }
+                    let output = PlanOutput {
+                        plan: &plan,
+                        changelog,
+                    };
+                    println!("{}", serde_json::to_string_pretty(&output)?);
                 }
                 PlanFormat::Human => {
                     println!("Next release: {}", plan.tag_name);
@@ -247,6 +278,7 @@ fn main() -> anyhow::Result<()> {
                             &commit.sha[..7.min(commit.sha.len())]
                         );
                     }
+                    println!("\nChangelog preview:\n{changelog}");
                 }
             }
             Ok(())
@@ -295,6 +327,12 @@ fn main() -> anyhow::Result<()> {
             } else {
                 println!("{changelog}");
             }
+            Ok(())
+        }
+
+        Commands::Completions { shell } => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(shell, &mut cmd, "sr", &mut std::io::stdout());
             Ok(())
         }
 
