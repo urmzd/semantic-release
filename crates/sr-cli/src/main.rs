@@ -26,6 +26,10 @@ enum Commands {
         /// Preview what would happen without making changes
         #[arg(long)]
         dry_run: bool,
+
+        /// Glob patterns for artifact files to upload to the release (repeatable)
+        #[arg(long = "artifacts")]
+        artifacts: Vec<String>,
     },
 
     /// Show what the next release would look like
@@ -468,8 +472,9 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
 
-        Commands::Release { dry_run } => {
-            let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+        Commands::Release { dry_run, artifacts } => {
+            let mut config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            config.artifacts.extend(artifacts);
 
             // Try to build with GitHub; fall back to local-only if no token
             match build_full_strategy(config.clone()) {

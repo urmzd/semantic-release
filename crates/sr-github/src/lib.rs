@@ -84,6 +84,26 @@ impl VcsProvider for GitHubProvider {
         Ok(())
     }
 
+    fn upload_assets(&self, tag: &str, files: &[&str]) -> Result<(), ReleaseError> {
+        let repo_slug = format!("{}/{}", self.owner, self.repo);
+        let mut args = vec!["release", "upload", tag, "--repo", &repo_slug, "--clobber"];
+        args.extend(files);
+
+        let output = Command::new("gh")
+            .args(&args)
+            .output()
+            .map_err(|e| ReleaseError::Vcs(format!("failed to run gh: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ReleaseError::Vcs(format!(
+                "gh release upload failed: {stderr}"
+            )));
+        }
+
+        Ok(())
+    }
+
     fn resolve_contributors(
         &self,
         author_shas: &[(&str, &str)],

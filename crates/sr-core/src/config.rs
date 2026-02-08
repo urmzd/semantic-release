@@ -19,6 +19,7 @@ pub struct ReleaseConfig {
     pub hooks: HooksConfig,
     pub version_files: Vec<String>,
     pub version_files_strict: bool,
+    pub artifacts: Vec<String>,
 }
 
 impl Default for ReleaseConfig {
@@ -34,6 +35,7 @@ impl Default for ReleaseConfig {
             hooks: HooksConfig::default(),
             version_files: vec![],
             version_files_strict: false,
+            artifacts: vec![],
         }
     }
 }
@@ -117,6 +119,7 @@ mod tests {
         assert!(config.hooks.post_release.is_empty());
         assert!(config.hooks.on_failure.is_empty());
         assert!(!config.version_files_strict);
+        assert!(config.artifacts.is_empty());
     }
 
     #[test]
@@ -157,6 +160,19 @@ mod tests {
         assert_eq!(config.commit_pattern, DEFAULT_COMMIT_PATTERN);
         assert_eq!(config.breaking_section, "Breaking Changes");
         assert!(!config.types.is_empty());
+    }
+
+    #[test]
+    fn load_yaml_with_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(&path, "artifacts:\n  - \"dist/*.tar.gz\"\n  - \"build/output-*\"\n")
+            .unwrap();
+
+        let config = ReleaseConfig::load(&path).unwrap();
+        assert_eq!(config.artifacts, vec!["dist/*.tar.gz", "build/output-*"]);
+        // defaults still apply
+        assert_eq!(config.tag_prefix, "v");
     }
 
     #[test]

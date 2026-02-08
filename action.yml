@@ -31,6 +31,10 @@ inputs:
     description: "Git user email for tag creation"
     required: false
     default: "semantic-release[bot]@urmzd.com"
+  artifacts:
+    description: "Glob patterns for artifact files to upload (newline or comma separated)"
+    required: false
+    default: ""
 
 outputs:
   version:
@@ -83,10 +87,17 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
-        ARGS="${{ inputs.command }}"
-
+        set -euo pipefail
+        ARGS=()
+        ARGS+=("${{ inputs.command }}")
         if [ "${{ inputs.dry-run }}" = "true" ]; then
-          ARGS="$ARGS --dry-run"
+          ARGS+=("--dry-run")
         fi
-
-        sr $ARGS
+        IFS=$'\n,' read -ra PATTERNS <<< "${{ inputs.artifacts }}"
+        for pattern in "${PATTERNS[@]}"; do
+          trimmed=$(echo "$pattern" | xargs)
+          if [ -n "$trimmed" ]; then
+            ARGS+=("--artifacts" "$trimmed")
+          fi
+        done
+        sr "${ARGS[@]}"

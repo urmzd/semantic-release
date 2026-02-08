@@ -75,6 +75,11 @@ pub trait VcsProvider: Send + Sync {
         None
     }
 
+    /// Upload asset files to an existing release identified by tag.
+    fn upload_assets(&self, _tag: &str, _files: &[&str]) -> Result<(), ReleaseError> {
+        Ok(())
+    }
+
     /// Resolve git author names to GitHub `@username` strings.
     /// Each entry in `author_shas` is `(author_name, commit_sha)`.
     /// Returns a map of `author_name -> @username`. Failures are silently skipped.
@@ -217,6 +222,17 @@ where
                     eprintln!("[dry-run] warning: unsupported version file, would skip: {file}");
                 }
             }
+            if !self.config.artifacts.is_empty() {
+                let resolved = resolve_artifact_globs(&self.config.artifacts)?;
+                if resolved.is_empty() {
+                    eprintln!("[dry-run] Artifact patterns matched no files");
+                } else {
+                    eprintln!("[dry-run] Would upload {} artifact(s):", resolved.len());
+                    for f in &resolved {
+                        eprintln!("[dry-run]   {f}");
+                    }
+                }
+            }
             for hook in &self.config.hooks.pre_release {
                 eprintln!("[dry-run] Would run pre-release hook: {hook}");
             }
@@ -354,6 +370,24 @@ where
                 .map_err(&run_failure_hooks)?;
         }
 
+        // 9.5 Upload artifacts
+        if self.vcs.is_some() && !self.config.artifacts.is_empty() {
+            let resolved = resolve_artifact_globs(&self.config.artifacts).map_err(&run_failure_hooks)?;
+            if !resolved.is_empty() {
+                let file_refs: Vec<&str> = resolved.iter().map(|s| s.as_str()).collect();
+                self.vcs
+                    .as_ref()
+                    .unwrap()
+                    .upload_assets(&plan.tag_name, &file_refs)
+                    .map_err(&run_failure_hooks)?;
+                eprintln!(
+                    "Uploaded {} artifact(s) to {}",
+                    resolved.len(),
+                    plan.tag_name
+                );
+            }
+        }
+
         // 10. Post-release hooks
         let post_release_ctx = build_hook_context(plan, "post_release", false);
         self.hooks
@@ -366,6 +400,26 @@ where
         eprintln!("Released {}", plan.tag_name);
         Ok(())
     }
+}
+
+fn resolve_artifact_globs(patterns: &[String]) -> Result<Vec<String>, ReleaseError> {
+    let mut files = std::collections::BTreeSet::new();
+    for pattern in patterns {
+        let paths = glob::glob(pattern)
+            .map_err(|e| ReleaseError::Vcs(format!("invalid glob pattern '{pattern}': {e}")))?;
+        for entry in paths {
+            match entry {
+                Ok(path) if path.is_file() => {
+                    files.insert(path.to_string_lossy().into_owned());
+                }
+                Ok(_) => {} // skip directories
+                Err(e) => {
+                    eprintln!("warning: glob error: {e}");
+                }
+            }
+        }
+    }
+    Ok(files.into_iter().collect())
 }
 
 pub fn today_string() -> String {
@@ -483,6 +537,7 @@ mod tests {
     struct FakeVcs {
         releases: Mutex<Vec<(String, String)>>,
         deleted_releases: Mutex<Vec<String>>,
+        uploaded_assets: Mutex<Vec<(String, Vec<String>)>>,
     }
 
     impl FakeVcs {
@@ -490,6 +545,7 @@ mod tests {
             Self {
                 releases: Mutex::new(Vec::new()),
                 deleted_releases: Mutex::new(Vec::new()),
+                uploaded_assets: Mutex::new(Vec::new()),
             }
         }
     }
@@ -520,6 +576,14 @@ mod tests {
         fn delete_release(&self, tag: &str) -> Result<(), ReleaseError> {
             self.deleted_releases.lock().unwrap().push(tag.to_string());
             self.releases.lock().unwrap().retain(|(t, _)| t != tag);
+            Ok(())
+        }
+
+        fn upload_assets(&self, tag: &str, files: &[&str]) -> Result<(), ReleaseError> {
+            self.uploaded_assets.lock().unwrap().push((
+                tag.to_string(),
+                files.iter().map(|s| s.to_string()).collect(),
+            ));
             Ok(())
         }
 
@@ -954,5 +1018,87 @@ mod tests {
                 .0
                 .contains(&cargo_path.to_str().unwrap().to_string())
         );
+    }
+
+    // --- artifact upload tests ---
+
+    #[test]
+    fn execute_uploads_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("app.tar.gz"), "fake tarball").unwrap();
+        std::fs::write(dir.path().join("app.zip"), "fake zip").unwrap();
+
+        let mut config = ReleaseConfig::default();
+        config.artifacts = vec![
+            dir.path().join("*.tar.gz").to_str().unwrap().to_string(),
+            dir.path().join("*.zip").to_str().unwrap().to_string(),
+        ];
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        let uploaded = s.vcs.as_ref().unwrap().uploaded_assets.lock().unwrap();
+        assert_eq!(uploaded.len(), 1);
+        assert_eq!(uploaded[0].0, "v0.1.0");
+        assert_eq!(uploaded[0].1.len(), 2);
+        assert!(uploaded[0].1.iter().any(|f| f.ends_with("app.tar.gz")));
+        assert!(uploaded[0].1.iter().any(|f| f.ends_with("app.zip")));
+    }
+
+    #[test]
+    fn execute_dry_run_shows_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("app.tar.gz"), "fake tarball").unwrap();
+
+        let mut config = ReleaseConfig::default();
+        config.artifacts = vec![dir.path().join("*.tar.gz").to_str().unwrap().to_string()];
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, true).unwrap();
+
+        // No uploads should happen during dry-run
+        let uploaded = s.vcs.as_ref().unwrap().uploaded_assets.lock().unwrap();
+        assert!(uploaded.is_empty());
+    }
+
+    #[test]
+    fn execute_no_artifacts_skips_upload() {
+        let s = make_strategy(
+            vec![],
+            vec![raw_commit("feat: something")],
+            ReleaseConfig::default(),
+        );
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        let uploaded = s.vcs.as_ref().unwrap().uploaded_assets.lock().unwrap();
+        assert!(uploaded.is_empty());
+    }
+
+    #[test]
+    fn resolve_artifact_globs_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "b").unwrap();
+        std::fs::create_dir(dir.path().join("subdir")).unwrap();
+
+        let pattern = dir.path().join("*.txt").to_str().unwrap().to_string();
+        let result = resolve_artifact_globs(&[pattern]).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().any(|f| f.ends_with("a.txt")));
+        assert!(result.iter().any(|f| f.ends_with("b.txt")));
+    }
+
+    #[test]
+    fn resolve_artifact_globs_deduplicates() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("file.txt"), "data").unwrap();
+
+        let pattern = dir.path().join("*.txt").to_str().unwrap().to_string();
+        // Same pattern twice should not produce duplicates
+        let result = resolve_artifact_globs(&[pattern.clone(), pattern]).unwrap();
+        assert_eq!(result.len(), 1);
     }
 }
