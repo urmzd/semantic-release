@@ -39,6 +39,10 @@ enum Commands {
         /// Write the changelog to disk
         #[arg(long)]
         write: bool,
+
+        /// Regenerate the entire changelog from all tags
+        #[arg(long)]
+        regenerate: bool,
     },
 
     /// Show the next version
@@ -120,8 +124,13 @@ fn build_local_strategy(
     let git = NativeGitRepository::open(Path::new("."))?;
     let types = config.types.clone();
     let breaking_section = config.breaking_section.clone();
-    let formatter =
-        DefaultChangelogFormatter::new(config.changelog.template.clone(), types, breaking_section);
+    let misc_section = config.misc_section.clone();
+    let formatter = DefaultChangelogFormatter::new(
+        config.changelog.template.clone(),
+        types,
+        breaking_section,
+        misc_section,
+    );
     Ok(TrunkReleaseStrategy {
         git,
         vcs: None,
@@ -149,8 +158,13 @@ fn build_full_strategy(
     let vcs = GitHubProvider::new(owner, repo);
     let types = config.types.clone();
     let breaking_section = config.breaking_section.clone();
-    let formatter =
-        DefaultChangelogFormatter::new(config.changelog.template.clone(), types, breaking_section);
+    let misc_section = config.misc_section.clone();
+    let formatter = DefaultChangelogFormatter::new(
+        config.changelog.template.clone(),
+        types,
+        breaking_section,
+        misc_section,
+    );
 
     Ok(TrunkReleaseStrategy {
         git,
@@ -225,6 +239,7 @@ fn main() -> anyhow::Result<()> {
                 config.changelog.template.clone(),
                 config.types.clone(),
                 config.breaking_section.clone(),
+                config.misc_section.clone(),
             );
             let strategy = build_local_strategy(config)?;
             let plan = strategy.plan()?;
@@ -290,51 +305,115 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
 
-        Commands::Changelog { write } => {
+        Commands::Changelog { write, regenerate } => {
             let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
-            let strategy = build_local_strategy(config.clone())?;
-            let plan = strategy.plan()?;
-
-            let repo_url = NativeGitRepository::open(Path::new("."))
-                .ok()
-                .and_then(|git| git.parse_remote().ok())
-                .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"));
 
             let formatter = DefaultChangelogFormatter::new(
                 config.changelog.template.clone(),
                 config.types.clone(),
                 config.breaking_section.clone(),
+                config.misc_section.clone(),
             );
-            let today = sr_core::release::today_string();
-            let entry = sr_core::changelog::ChangelogEntry {
-                version: plan.next_version.to_string(),
-                date: today,
-                commits: plan.commits,
-                compare_url: None,
-                repo_url,
+
+            let changelog = if regenerate {
+                use sr_core::commit::CommitParser;
+                use sr_core::git::GitRepository;
+
+                let git = NativeGitRepository::open(Path::new("."))?;
+                let repo_url = git
+                    .parse_remote()
+                    .ok()
+                    .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"));
+
+                let tags = git.all_tags(&config.tag_prefix)?;
+                if tags.is_empty() {
+                    anyhow::bail!("no tags found with prefix '{}'", config.tag_prefix);
+                }
+
+                let parser = DefaultCommitParser;
+                let mut entries = Vec::new();
+
+                for (i, tag) in tags.iter().enumerate() {
+                    let from = if i == 0 {
+                        None
+                    } else {
+                        Some(tags[i - 1].sha.as_str())
+                    };
+                    let raw_commits = git.commits_between(from, &tag.name)?;
+                    let conventional: Vec<_> = raw_commits
+                        .iter()
+                        .filter(|c| !c.message.starts_with("chore(release):"))
+                        .filter_map(|c| parser.parse(c).ok())
+                        .collect();
+
+                    let date = git.tag_date(&tag.name)?;
+                    let compare_url = if i > 0 {
+                        repo_url
+                            .as_ref()
+                            .map(|url| format!("{url}/compare/{}...{}", tags[i - 1].name, tag.name))
+                    } else {
+                        None
+                    };
+
+                    entries.push(sr_core::changelog::ChangelogEntry {
+                        version: tag.version.to_string(),
+                        date,
+                        commits: conventional,
+                        compare_url,
+                        repo_url: repo_url.clone(),
+                    });
+                }
+
+                // Newest first
+                entries.reverse();
+
+                sr_core::changelog::ChangelogFormatter::format(&formatter, &entries)?
+            } else {
+                let strategy = build_local_strategy(config.clone())?;
+                let plan = strategy.plan()?;
+
+                let repo_url = NativeGitRepository::open(Path::new("."))
+                    .ok()
+                    .and_then(|git| git.parse_remote().ok())
+                    .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"));
+
+                let today = sr_core::release::today_string();
+                let entry = sr_core::changelog::ChangelogEntry {
+                    version: plan.next_version.to_string(),
+                    date: today,
+                    commits: plan.commits,
+                    compare_url: None,
+                    repo_url,
+                };
+
+                sr_core::changelog::ChangelogFormatter::format(&formatter, &[entry])?
             };
-            let changelog = sr_core::changelog::ChangelogFormatter::format(&formatter, &[entry])?;
 
             if write {
                 let file = config.changelog.file.as_deref().unwrap_or("CHANGELOG.md");
                 let path = Path::new(file);
-                let existing = if path.exists() {
-                    std::fs::read_to_string(path)?
+                if regenerate {
+                    let content = format!("# Changelog\n\n{changelog}\n");
+                    std::fs::write(path, content)?;
                 } else {
-                    String::new()
-                };
-                let content = if existing.is_empty() {
-                    format!("# Changelog\n\n{changelog}\n")
-                } else {
-                    match existing.find("\n\n") {
-                        Some(pos) => {
-                            let (header, rest) = existing.split_at(pos);
-                            format!("{header}\n\n{changelog}\n{rest}")
+                    let existing = if path.exists() {
+                        std::fs::read_to_string(path)?
+                    } else {
+                        String::new()
+                    };
+                    let content = if existing.is_empty() {
+                        format!("# Changelog\n\n{changelog}\n")
+                    } else {
+                        match existing.find("\n\n") {
+                            Some(pos) => {
+                                let (header, rest) = existing.split_at(pos);
+                                format!("{header}\n\n{changelog}\n{rest}")
+                            }
+                            None => format!("{existing}\n\n{changelog}\n"),
                         }
-                        None => format!("{existing}\n\n{changelog}\n"),
-                    }
-                };
-                std::fs::write(path, content)?;
+                    };
+                    std::fs::write(path, content)?;
+                }
                 eprintln!("wrote {file}");
             } else {
                 println!("{changelog}");

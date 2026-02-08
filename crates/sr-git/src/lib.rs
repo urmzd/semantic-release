@@ -72,6 +72,54 @@ pub fn parse_owner_repo(url: &str) -> Result<(String, String), ReleaseError> {
     Ok((owner.to_string(), repo.to_string()))
 }
 
+/// Parse the output of `git log --format=%H%n%an%n%B%n--END--` into commits.
+fn parse_commit_log(output: &str) -> Vec<Commit> {
+    if output.is_empty() {
+        return Vec::new();
+    }
+
+    let mut commits = Vec::new();
+    let mut current_sha: Option<String> = None;
+    let mut current_author: Option<String> = None;
+    let mut current_message = String::new();
+
+    for line in output.lines() {
+        if line == "--END--" {
+            if let Some(sha) = current_sha.take() {
+                commits.push(Commit {
+                    sha,
+                    message: current_message.trim().to_string(),
+                    author: current_author.take(),
+                });
+                current_message.clear();
+            }
+        } else if current_sha.is_none()
+            && line.len() == 40
+            && line.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            current_sha = Some(line.to_string());
+        } else if current_sha.is_some() && current_author.is_none() {
+            current_author = Some(line.to_string());
+        } else {
+            if !current_message.is_empty() {
+                current_message.push('\n');
+            }
+            current_message.push_str(line);
+        }
+    }
+
+    // Handle last commit if no trailing --END--
+    if let Some(sha) = current_sha {
+        commits.push(Commit {
+            sha,
+            message: current_message.trim().to_string(),
+            author: current_author.take(),
+        });
+    }
+
+    commits
+}
+
 impl GitRepository for NativeGitRepository {
     fn latest_tag(&self, prefix: &str) -> Result<Option<TagInfo>, ReleaseError> {
         let pattern = format!("{prefix}*");
@@ -109,47 +157,8 @@ impl GitRepository for NativeGitRepository {
             None => "HEAD".to_string(),
         };
 
-        let output = self.git(&["log", "--format=%H%n%B%n--END--", &range])?;
-
-        if output.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut commits = Vec::new();
-        let mut current_sha: Option<String> = None;
-        let mut current_message = String::new();
-
-        for line in output.lines() {
-            if line == "--END--" {
-                if let Some(sha) = current_sha.take() {
-                    commits.push(Commit {
-                        sha,
-                        message: current_message.trim().to_string(),
-                    });
-                    current_message.clear();
-                }
-            } else if current_sha.is_none()
-                && line.len() == 40
-                && line.chars().all(|c| c.is_ascii_hexdigit())
-            {
-                current_sha = Some(line.to_string());
-            } else {
-                if !current_message.is_empty() {
-                    current_message.push('\n');
-                }
-                current_message.push_str(line);
-            }
-        }
-
-        // Handle last commit if no trailing --END--
-        if let Some(sha) = current_sha {
-            commits.push(Commit {
-                sha,
-                message: current_message.trim().to_string(),
-            });
-        }
-
-        Ok(commits)
+        let output = self.git(&["log", "--format=%H%n%an%n%B%n--END--", &range])?;
+        Ok(parse_commit_log(&output))
     }
 
     fn create_tag(&self, name: &str, message: &str) -> Result<(), ReleaseError> {
@@ -192,6 +201,53 @@ impl GitRepository for NativeGitRepository {
     fn remote_tag_exists(&self, name: &str) -> Result<bool, ReleaseError> {
         let output = self.git(&["ls-remote", "--tags", "origin", name])?;
         Ok(!output.is_empty())
+    }
+
+    fn all_tags(&self, prefix: &str) -> Result<Vec<TagInfo>, ReleaseError> {
+        let pattern = format!("{prefix}*");
+        let result = self.git(&["tag", "--list", &pattern, "--sort=v:refname"]);
+
+        let tags_output = match result {
+            Ok(output) if output.is_empty() => return Ok(Vec::new()),
+            Ok(output) => output,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let mut tags = Vec::new();
+        for line in tags_output.lines() {
+            let tag_name = line.trim();
+            if tag_name.is_empty() {
+                continue;
+            }
+            let version_str = tag_name.strip_prefix(prefix).unwrap_or(tag_name);
+            let version = match Version::parse(version_str) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let sha = self.git(&["rev-list", "-1", tag_name])?;
+            tags.push(TagInfo {
+                name: tag_name.to_string(),
+                version,
+                sha,
+            });
+        }
+
+        Ok(tags)
+    }
+
+    fn commits_between(&self, from: Option<&str>, to: &str) -> Result<Vec<Commit>, ReleaseError> {
+        let range = match from {
+            Some(sha) => format!("{sha}..{to}"),
+            None => to.to_string(),
+        };
+
+        let output = self.git(&["log", "--format=%H%n%an%n%B%n--END--", &range])?;
+        Ok(parse_commit_log(&output))
+    }
+
+    fn tag_date(&self, tag_name: &str) -> Result<String, ReleaseError> {
+        let date = self.git(&["log", "-1", "--format=%cd", "--date=short", tag_name])?;
+        Ok(date)
     }
 }
 

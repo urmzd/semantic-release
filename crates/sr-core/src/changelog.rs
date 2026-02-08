@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::commit::{CommitType, ConventionalCommit};
 use crate::error::ReleaseError;
@@ -23,14 +23,21 @@ pub struct DefaultChangelogFormatter {
     _template: Option<String>,
     types: Vec<CommitType>,
     breaking_section: String,
+    misc_section: String,
 }
 
 impl DefaultChangelogFormatter {
-    pub fn new(template: Option<String>, types: Vec<CommitType>, breaking_section: String) -> Self {
+    pub fn new(
+        template: Option<String>,
+        types: Vec<CommitType>,
+        breaking_section: String,
+        misc_section: String,
+    ) -> Self {
         Self {
             _template: template,
             types,
             breaking_section,
+            misc_section,
         }
     }
 }
@@ -51,18 +58,31 @@ impl ChangelogFormatter for DefaultChangelogFormatter {
             }
         }
 
+        // Set of type names that have an explicit mapping (section or no-section).
+        let known_types: BTreeSet<&str> = self.types.iter().map(|t| t.name.as_str()).collect();
+
         for entry in entries {
             output.push_str(&format!("## {} ({})\n", entry.version, entry.date));
 
-            // Group commits by section.
+            // 1. Breaking changes section (at the top).
+            let breaking: Vec<_> = entry.commits.iter().filter(|c| c.breaking).collect();
+            if !breaking.is_empty() {
+                output.push_str(&format!("\n### {}\n\n", self.breaking_section));
+                for commit in &breaking {
+                    format_commit_line(&mut output, commit, entry.repo_url.as_deref());
+                }
+            }
+
+            // 2. Type sections (Features, Bug Fixes, Performance, Documentation, etc.)
             for section_name in &seen_sections {
                 let commits_in_section: Vec<_> = entry
                     .commits
                     .iter()
                     .filter(|c| {
-                        section_map
-                            .get(c.r#type.as_str())
-                            .is_some_and(|s| s == section_name)
+                        !c.breaking
+                            && section_map
+                                .get(c.r#type.as_str())
+                                .is_some_and(|s| s == section_name)
                     })
                     .collect();
 
@@ -74,12 +94,36 @@ impl ChangelogFormatter for DefaultChangelogFormatter {
                 }
             }
 
-            // Breaking changes section.
-            let breaking: Vec<_> = entry.commits.iter().filter(|c| c.breaking).collect();
-            if !breaking.is_empty() {
-                output.push_str(&format!("\n### {}\n\n", self.breaking_section));
-                for commit in &breaking {
+            // 3. Miscellaneous catch-all (commits with no section mapping, excluding breaking).
+            let misc: Vec<_> = entry
+                .commits
+                .iter()
+                .filter(|c| {
+                    !c.breaking
+                        && !section_map.contains_key(c.r#type.as_str())
+                        && known_types.contains(c.r#type.as_str())
+                })
+                .collect();
+            if !misc.is_empty() {
+                output.push_str(&format!("\n### {}\n\n", self.misc_section));
+                for commit in &misc {
                     format_commit_line(&mut output, commit, entry.repo_url.as_deref());
+                }
+            }
+
+            // 4. Contributors section.
+            let mut authors: Vec<String> = entry
+                .commits
+                .iter()
+                .filter_map(|c| c.author.clone())
+                .collect::<BTreeSet<String>>()
+                .into_iter()
+                .collect();
+            authors.sort();
+            if !authors.is_empty() {
+                output.push_str("\n### Contributors\n\n");
+                for author in &authors {
+                    output.push_str(&format!("- {author}\n"));
                 }
             }
 
@@ -128,6 +172,25 @@ mod tests {
             description: desc.into(),
             body: None,
             breaking,
+            author: None,
+        }
+    }
+
+    fn make_commit_with_author(
+        type_: &str,
+        desc: &str,
+        scope: Option<&str>,
+        breaking: bool,
+        author: &str,
+    ) -> ConventionalCommit {
+        ConventionalCommit {
+            sha: "abc1234def5678".into(),
+            r#type: type_.into(),
+            scope: scope.map(Into::into),
+            description: desc.into(),
+            body: None,
+            breaking,
+            author: Some(author.into()),
         }
     }
 
@@ -142,9 +205,14 @@ mod tests {
     }
 
     fn format(entries: &[ChangelogEntry]) -> String {
-        DefaultChangelogFormatter::new(None, default_commit_types(), "Breaking Changes".into())
-            .format(entries)
-            .unwrap()
+        DefaultChangelogFormatter::new(
+            None,
+            default_commit_types(),
+            "Breaking Changes".into(),
+            "Miscellaneous".into(),
+        )
+        .format(entries)
+        .unwrap()
     }
 
     #[test]
@@ -222,5 +290,90 @@ mod tests {
         e.repo_url = Some("https://github.com/o/r".into());
         let out = format(&[e]);
         assert!(out.contains("[abc1234](https://github.com/o/r/commit/abc1234def5678)"));
+    }
+
+    #[test]
+    fn format_breaking_at_top() {
+        let commits = vec![
+            make_commit("feat", "add button", None, false),
+            make_commit("feat", "breaking thing", None, true),
+        ];
+        let out = format(&[entry(commits, None)]);
+        let breaking_pos = out.find("### Breaking Changes").unwrap();
+        let features_pos = out.find("### Features").unwrap();
+        assert!(
+            breaking_pos < features_pos,
+            "Breaking Changes should appear before Features"
+        );
+    }
+
+    #[test]
+    fn format_misc_catch_all() {
+        let commits = vec![
+            make_commit("feat", "add button", None, false),
+            make_commit("chore", "tidy up", None, false),
+            make_commit("ci", "fix pipeline", None, false),
+        ];
+        let out = format(&[entry(commits, None)]);
+        assert!(out.contains("### Miscellaneous"));
+        assert!(out.contains("tidy up"));
+        assert!(out.contains("fix pipeline"));
+    }
+
+    #[test]
+    fn format_contributors() {
+        let commits = vec![
+            make_commit_with_author("feat", "add button", None, false, "Alice"),
+            make_commit_with_author("fix", "null check", None, false, "Bob"),
+            make_commit_with_author("feat", "add flag", None, false, "Alice"),
+        ];
+        let out = format(&[entry(commits, None)]);
+        assert!(out.contains("### Contributors"));
+        assert!(out.contains("- Alice"));
+        assert!(out.contains("- Bob"));
+        // Alice should appear only once (deduplicated)
+        assert_eq!(out.matches("- Alice").count(), 1);
+    }
+
+    #[test]
+    fn format_no_contributors_without_authors() {
+        let out = format(&[entry(
+            vec![make_commit("feat", "add button", None, false)],
+            None,
+        )]);
+        assert!(!out.contains("### Contributors"));
+    }
+
+    #[test]
+    fn format_breaking_excluded_from_type_sections() {
+        let commits = vec![
+            make_commit("feat", "normal feature", None, false),
+            make_commit("feat", "breaking feature", None, true),
+        ];
+        let out = format(&[entry(commits, None)]);
+        // The breaking commit should be in Breaking Changes, not in Features
+        let features_section_start = out.find("### Features").unwrap();
+        let features_section_end = out[features_section_start..]
+            .find("\n### ")
+            .map(|p| features_section_start + p)
+            .unwrap_or(out.len());
+        let features_section = &out[features_section_start..features_section_end];
+        assert!(features_section.contains("normal feature"));
+        assert!(!features_section.contains("breaking feature"));
+    }
+
+    #[test]
+    fn format_new_type_sections() {
+        let commits = vec![
+            make_commit("perf", "speed up query", None, false),
+            make_commit("docs", "update readme", None, false),
+            make_commit("refactor", "clean up code", None, false),
+            make_commit("revert", "undo change", None, false),
+        ];
+        let out = format(&[entry(commits, None)]);
+        assert!(out.contains("### Performance"));
+        assert!(out.contains("### Documentation"));
+        assert!(out.contains("### Refactoring"));
+        assert!(out.contains("### Reverts"));
     }
 }

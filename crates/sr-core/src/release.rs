@@ -419,6 +419,22 @@ mod tests {
         fn remote_tag_exists(&self, name: &str) -> Result<bool, ReleaseError> {
             Ok(self.pushed_tags.lock().unwrap().contains(&name.to_string()))
         }
+
+        fn all_tags(&self, _prefix: &str) -> Result<Vec<TagInfo>, ReleaseError> {
+            Ok(self.tags.clone())
+        }
+
+        fn commits_between(
+            &self,
+            _from: Option<&str>,
+            _to: &str,
+        ) -> Result<Vec<Commit>, ReleaseError> {
+            Ok(self.commits.clone())
+        }
+
+        fn tag_date(&self, _tag_name: &str) -> Result<String, ReleaseError> {
+            Ok("2026-01-01".into())
+        }
     }
 
     struct FakeVcs {
@@ -501,6 +517,7 @@ mod tests {
         Commit {
             sha: "a".repeat(40),
             message: msg.into(),
+            author: None,
         }
     }
 
@@ -517,11 +534,12 @@ mod tests {
     > {
         let types = config.types.clone();
         let breaking_section = config.breaking_section.clone();
+        let misc_section = config.misc_section.clone();
         TrunkReleaseStrategy {
             git: FakeGit::new(tags, commits),
             vcs: Some(FakeVcs::new()),
             parser: DefaultCommitParser,
-            formatter: DefaultChangelogFormatter::new(None, types, breaking_section),
+            formatter: DefaultChangelogFormatter::new(None, types, breaking_section, misc_section),
             hooks: FakeHooks::new(),
             config,
         }

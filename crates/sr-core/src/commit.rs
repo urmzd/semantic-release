@@ -9,6 +9,7 @@ use crate::version::BumpLevel;
 pub struct Commit {
     pub sha: String,
     pub message: String,
+    pub author: Option<String>,
 }
 
 /// A commit parsed according to the Conventional Commits specification.
@@ -20,6 +21,7 @@ pub struct ConventionalCommit {
     pub description: String,
     pub body: Option<String>,
     pub breaking: bool,
+    pub author: Option<String>,
 }
 
 /// Describes a recognised commit type.
@@ -106,7 +108,22 @@ pub fn default_commit_types() -> Vec<CommitType> {
         CommitType {
             name: "perf".into(),
             bump: Some(BumpLevel::Patch),
-            section: Some("Bug Fixes".into()),
+            section: Some("Performance".into()),
+        },
+        CommitType {
+            name: "docs".into(),
+            bump: None,
+            section: Some("Documentation".into()),
+        },
+        CommitType {
+            name: "refactor".into(),
+            bump: None,
+            section: Some("Refactoring".into()),
+        },
+        CommitType {
+            name: "revert".into(),
+            bump: None,
+            section: Some("Reverts".into()),
         },
         CommitType {
             name: "chore".into(),
@@ -114,17 +131,7 @@ pub fn default_commit_types() -> Vec<CommitType> {
             section: None,
         },
         CommitType {
-            name: "docs".into(),
-            bump: None,
-            section: None,
-        },
-        CommitType {
             name: "ci".into(),
-            bump: None,
-            section: None,
-        },
-        CommitType {
-            name: "refactor".into(),
             bump: None,
             section: None,
         },
@@ -140,11 +147,6 @@ pub fn default_commit_types() -> Vec<CommitType> {
         },
         CommitType {
             name: "style".into(),
-            bump: None,
-            section: None,
-        },
-        CommitType {
-            name: "revert".into(),
             bump: None,
             section: None,
         },
@@ -186,6 +188,7 @@ impl CommitParser for DefaultCommitParser {
             description,
             body,
             breaking,
+            author: commit.author.clone(),
         })
     }
 }
@@ -198,6 +201,7 @@ mod tests {
         Commit {
             sha: "abc1234".into(),
             message: message.into(),
+            author: None,
         }
     }
 
@@ -278,6 +282,10 @@ mod tests {
         let c = DefaultCommitClassifier::default();
         assert_eq!(c.changelog_section("feat"), Some("Features"));
         assert_eq!(c.changelog_section("fix"), Some("Bug Fixes"));
+        assert_eq!(c.changelog_section("perf"), Some("Performance"));
+        assert_eq!(c.changelog_section("docs"), Some("Documentation"));
+        assert_eq!(c.changelog_section("refactor"), Some("Refactoring"));
+        assert_eq!(c.changelog_section("revert"), Some("Reverts"));
         assert_eq!(c.changelog_section("chore"), None);
         assert_eq!(c.changelog_section("unknown"), None);
     }

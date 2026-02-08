@@ -13,6 +13,7 @@ pub struct ReleaseConfig {
     pub tag_prefix: String,
     pub commit_pattern: String,
     pub breaking_section: String,
+    pub misc_section: String,
     pub types: Vec<CommitType>,
     pub changelog: ChangelogConfig,
     pub hooks: HooksConfig,
@@ -26,6 +27,7 @@ impl Default for ReleaseConfig {
             tag_prefix: "v".into(),
             commit_pattern: DEFAULT_COMMIT_PATTERN.into(),
             breaking_section: "Breaking Changes".into(),
+            misc_section: "Miscellaneous".into(),
             types: default_commit_types(),
             changelog: ChangelogConfig::default(),
             hooks: HooksConfig::default(),
@@ -106,6 +108,7 @@ mod tests {
         assert_eq!(config.tag_prefix, "v");
         assert_eq!(config.commit_pattern, DEFAULT_COMMIT_PATTERN);
         assert_eq!(config.breaking_section, "Breaking Changes");
+        assert_eq!(config.misc_section, "Miscellaneous");
         assert!(!config.types.is_empty());
         assert!(config.hooks.pre_release.is_empty());
         assert!(config.hooks.post_tag.is_empty());

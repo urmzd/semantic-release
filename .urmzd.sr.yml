@@ -7,6 +7,8 @@ commit_pattern: '^(?P<type>\w+)(?:\((?P<scope>[^)]+)\))?(?P<breaking>!)?:\s+(?P<
 
 breaking_section: Breaking Changes
 
+misc_section: Miscellaneous
+
 types:
   - name: feat
     bump: minor
@@ -16,15 +18,18 @@ types:
     section: Bug Fixes
   - name: perf
     bump: patch
-    section: Bug Fixes
-  - name: chore
+    section: Performance
   - name: docs
-  - name: ci
+    section: Documentation
   - name: refactor
+    section: Refactoring
+  - name: revert
+    section: Reverts
+  - name: chore
+  - name: ci
   - name: test
   - name: build
   - name: style
-  - name: revert
 
 changelog:
   file: CHANGELOG.md

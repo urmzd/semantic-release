@@ -37,4 +37,14 @@ pub trait GitRepository: Send + Sync {
 
     /// Check if a tag exists on the remote.
     fn remote_tag_exists(&self, name: &str) -> Result<bool, ReleaseError>;
+
+    /// List all semver tags matching prefix, sorted by version ascending.
+    fn all_tags(&self, prefix: &str) -> Result<Vec<TagInfo>, ReleaseError>;
+
+    /// List commits between two refs (exclusive `from`, inclusive `to`).
+    /// If `from` is None, returns all commits reachable from `to`.
+    fn commits_between(&self, from: Option<&str>, to: &str) -> Result<Vec<Commit>, ReleaseError>;
+
+    /// Get the date (YYYY-MM-DD) of the commit a tag points to.
+    fn tag_date(&self, tag_name: &str) -> Result<String, ReleaseError>;
 }
