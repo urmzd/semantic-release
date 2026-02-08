@@ -1,0 +1,19 @@
+[package]
+name = "sr-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pure domain logic for semantic-release"
+
+[dependencies]
+serde = { workspace = true }
+serde_yaml_ng = { workspace = true }
+semver = { workspace = true }
+git-conventional = { workspace = true }
+minijinja = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

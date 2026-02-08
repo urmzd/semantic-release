@@ -1,0 +1,21 @@
+[package]
+name = "sr-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI binary for semantic-release"
+
+[[bin]]
+name = "sr"
+path = "src/main.rs"
+
+[dependencies]
+sr-core = { workspace = true }
+sr-git = { workspace = true }
+sr-github = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+serde_yaml_ng = { workspace = true }
+serde_json = { workspace = true }

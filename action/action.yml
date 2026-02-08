@@ -1,0 +1,73 @@
+name: "Semantic Release"
+description: "Automated semantic versioning and release management"
+
+inputs:
+  command:
+    description: "The sr subcommand to run (release, plan, changelog, version, config)"
+    required: false
+    default: "release"
+  dry-run:
+    description: "Preview changes without executing them"
+    required: false
+    default: "false"
+  config:
+    description: "Path to the config file"
+    required: false
+    default: ".urmzd.sr.yml"
+  github-token:
+    description: "GitHub token for creating releases"
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: "The released version (empty if no release)"
+    value: ${{ steps.release.outputs.version }}
+  released:
+    description: "Whether a release was created (true/false)"
+    value: ${{ steps.release.outputs.released }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download sr binary
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+
+        case "$ARCH" in
+          x86_64)  ARCH="x86_64" ;;
+          aarch64|arm64) ARCH="aarch64" ;;
+          *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+
+        case "$OS" in
+          linux)  TARGET="${ARCH}-unknown-linux-gnu" ;;
+          darwin) TARGET="${ARCH}-apple-darwin" ;;
+          *) echo "Unsupported OS: $OS"; exit 1 ;;
+        esac
+
+        BINARY_NAME="sr-${TARGET}"
+        DOWNLOAD_URL="https://github.com/urmzd/semantic-release/releases/latest/download/${BINARY_NAME}"
+
+        curl -sSfL "$DOWNLOAD_URL" -o /usr/local/bin/sr
+        chmod +x /usr/local/bin/sr
+
+    - name: Run sr
+      id: release
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        ARGS="${{ inputs.command }}"
+
+        if [ "${{ inputs.dry-run }}" = "true" ]; then
+          ARGS="$ARGS --dry-run"
+        fi
+
+        sr $ARGS

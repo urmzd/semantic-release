@@ -1,0 +1,6 @@
+- id: conventional-commit-msg
+  name: Conventional Commit Message
+  entry: .githooks/commit-msg
+  language: script
+  stages: [commit-msg]
+  always_run: true

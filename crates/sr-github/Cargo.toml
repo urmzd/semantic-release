@@ -1,0 +1,12 @@
+[package]
+name = "sr-github"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GitHub VCS provider for semantic-release"
+
+[dependencies]
+sr-core = { workspace = true }
+octocrab = { workspace = true }
+tokio = { workspace = true }

@@ -1,0 +1,12 @@
+/target
+**/*.rs.bk
+*.pdb
+.env
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store

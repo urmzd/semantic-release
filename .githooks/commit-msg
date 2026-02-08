@@ -1,0 +1,100 @@
+#!/usr/bin/env sh
+#
+# commit-msg hook — validates that commit messages follow the Conventional Commits spec.
+# https://www.conventionalcommits.org/
+#
+# Reads `commit_pattern` and `types` from .urmzd.sr.yml when present,
+# otherwise falls back to built-in defaults.
+#
+# Install with: just install-hooks
+#
+# Only the first line (subject) is validated. Merge commits and fixup/squash
+# commits are allowed through unconditionally so interactive rebases and
+# merges aren't blocked.
+
+msg_file="$1"
+first_line=$(head -n1 "$msg_file")
+
+# Allow merge commits
+case "$first_line" in
+    Merge\ *) exit 0 ;;
+esac
+
+# Allow fixup/squash commits (from rebase -i)
+case "$first_line" in
+    fixup!\ * | squash!\ * | amend!\ *) exit 0 ;;
+esac
+
+# --- Read config or use defaults ---
+
+config_file=".urmzd.sr.yml"
+
+# Default conventional commits pattern (POSIX ERE — no named groups)
+default_pattern='^[a-zA-Z0-9_]+(\([^)]+\))?(!)?: .+'
+# Default allowed types
+default_types="feat fix perf chore docs ci refactor test build style revert"
+
+if [ -f "$config_file" ]; then
+    # Extract commit_pattern from config (first match, strip YAML key + quotes)
+    cfg_pattern=$(sed -n "s/^commit_pattern: *['\"]\\{0,1\\}\(.*\\)['\"]\\{0,1\\}$/\\1/p" "$config_file" | head -n1)
+
+    # Extract type names from the types list
+    cfg_types=$(sed -n 's/^  *- *name: *//p' "$config_file" | tr '\n' ' ')
+
+    # Use config values if found, otherwise defaults
+    if [ -n "$cfg_pattern" ]; then
+        # Convert named groups (?P<name>...) to plain groups (...) for grep -E
+        pattern=$(echo "$cfg_pattern" | sed 's/(?P<[^>]*>/(/g')
+    else
+        pattern="$default_pattern"
+    fi
+
+    if [ -n "$cfg_types" ]; then
+        allowed_types="$cfg_types"
+    else
+        allowed_types="$default_types"
+    fi
+else
+    pattern="$default_pattern"
+    allowed_types="$default_types"
+fi
+
+# --- Validate against pattern ---
+
+if ! echo "$first_line" | grep -Eq "$pattern"; then
+    echo >&2 "ERROR: commit message does not follow Conventional Commits."
+    echo >&2 ""
+    echo >&2 "  Expected: <type>(<scope>): <description>"
+    echo >&2 "  Got:      $first_line"
+    echo >&2 ""
+    echo >&2 "  Valid types: $allowed_types"
+    echo >&2 "  Breaking:    append '!' before the colon, e.g. feat!: ..."
+    echo >&2 ""
+    echo >&2 "  Examples:"
+    echo >&2 "    feat: add release dry-run flag"
+    echo >&2 "    fix(core): handle empty tag list"
+    echo >&2 "    feat!: redesign config format"
+    echo >&2 ""
+    exit 1
+fi
+
+# --- Validate type is in allowed list ---
+
+# Extract the type (everything before the first '(' or '!' or ':')
+msg_type=$(echo "$first_line" | sed 's/^\([a-zA-Z0-9_]*\).*/\1/')
+
+type_allowed=0
+for t in $allowed_types; do
+    if [ "$msg_type" = "$t" ]; then
+        type_allowed=1
+        break
+    fi
+done
+
+if [ "$type_allowed" -eq 0 ]; then
+    echo >&2 "ERROR: commit type '$msg_type' is not allowed."
+    echo >&2 ""
+    echo >&2 "  Valid types: $allowed_types"
+    echo >&2 ""
+    exit 1
+fi

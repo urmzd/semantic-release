@@ -1,0 +1,319 @@
+use std::path::Path;
+
+use clap::{Parser, Subcommand};
+use sr_core::changelog::DefaultChangelogFormatter;
+use sr_core::commit::DefaultCommitParser;
+use sr_core::config::ReleaseConfig;
+use sr_core::hooks::ShellHookRunner;
+use sr_core::release::{ReleaseStrategy, TrunkReleaseStrategy, VcsProvider};
+use sr_git::NativeGitRepository;
+use sr_github::GitHubProvider;
+
+const DEFAULT_CONFIG_FILE: &str = ".urmzd.sr.yml";
+
+#[derive(Parser)]
+#[command(name = "sr", about = "Semantic Release CLI", version)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Execute a release (trunk flow: tag + GitHub release)
+    Release {
+        /// Preview what would happen without making changes
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Show what the next release would look like
+    Plan {
+        /// Output format
+        #[arg(long, default_value = "human")]
+        format: PlanFormat,
+    },
+
+    /// Generate or preview the changelog
+    Changelog {
+        /// Write the changelog to disk
+        #[arg(long)]
+        write: bool,
+    },
+
+    /// Show the next version
+    Version {
+        /// Print only the version number
+        #[arg(long)]
+        short: bool,
+    },
+
+    /// Validate and display resolved configuration
+    Config {
+        /// Show the fully resolved config with defaults applied
+        #[arg(long)]
+        resolved: bool,
+    },
+
+    /// Create a default configuration file
+    Init {
+        /// Overwrite the config file if it already exists
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+#[derive(Clone, clap::ValueEnum)]
+enum PlanFormat {
+    Human,
+    Json,
+}
+
+/// A no-op VcsProvider used when GITHUB_TOKEN is not available.
+struct NoopVcsProvider;
+
+impl VcsProvider for NoopVcsProvider {
+    fn create_release(
+        &self,
+        _tag: &str,
+        _name: &str,
+        _body: &str,
+        _prerelease: bool,
+    ) -> Result<String, sr_core::error::ReleaseError> {
+        Ok(String::new())
+    }
+
+    fn compare_url(
+        &self,
+        _base: &str,
+        _head: &str,
+    ) -> Result<String, sr_core::error::ReleaseError> {
+        Ok(String::new())
+    }
+}
+
+fn build_local_strategy(
+    config: ReleaseConfig,
+) -> anyhow::Result<
+    TrunkReleaseStrategy<
+        NativeGitRepository,
+        NoopVcsProvider,
+        DefaultCommitParser,
+        DefaultChangelogFormatter,
+        ShellHookRunner,
+    >,
+> {
+    let git = NativeGitRepository::open(Path::new("."))?;
+    let types = config.types.clone();
+    let breaking_section = config.breaking_section.clone();
+    let formatter =
+        DefaultChangelogFormatter::new(config.changelog.template.clone(), types, breaking_section);
+    Ok(TrunkReleaseStrategy {
+        git,
+        vcs: None,
+        parser: DefaultCommitParser,
+        formatter,
+        hooks: ShellHookRunner,
+        config,
+    })
+}
+
+fn build_full_strategy(
+    config: ReleaseConfig,
+) -> anyhow::Result<
+    TrunkReleaseStrategy<
+        NativeGitRepository,
+        GitHubProvider,
+        DefaultCommitParser,
+        DefaultChangelogFormatter,
+        ShellHookRunner,
+    >,
+> {
+    let git = NativeGitRepository::open(Path::new("."))?;
+    let (owner, repo) = git.parse_remote()?;
+
+    let token = std::env::var("GITHUB_TOKEN")
+        .map_err(|_| anyhow::anyhow!("GITHUB_TOKEN environment variable is not set"))?;
+
+    let vcs = GitHubProvider::new(&token, owner, repo)?;
+    let types = config.types.clone();
+    let breaking_section = config.breaking_section.clone();
+    let formatter =
+        DefaultChangelogFormatter::new(config.changelog.template.clone(), types, breaking_section);
+
+    Ok(TrunkReleaseStrategy {
+        git,
+        vcs: Some(vcs),
+        parser: DefaultCommitParser,
+        formatter,
+        hooks: ShellHookRunner,
+        config,
+    })
+}
+
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Init { force } => {
+            let path = Path::new(DEFAULT_CONFIG_FILE);
+
+            if path.exists() && !force {
+                anyhow::bail!("{DEFAULT_CONFIG_FILE} already exists (use --force to overwrite)");
+            }
+
+            let config = ReleaseConfig::default();
+            let yaml = serde_yaml_ng::to_string(&config)?;
+            std::fs::write(path, yaml)?;
+
+            eprintln!("wrote {DEFAULT_CONFIG_FILE}");
+            Ok(())
+        }
+
+        Commands::Config { resolved } => {
+            let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            if resolved {
+                let yaml = serde_yaml_ng::to_string(&config)?;
+                print!("{yaml}");
+            } else {
+                let path = Path::new(DEFAULT_CONFIG_FILE);
+                if path.exists() {
+                    let raw = std::fs::read_to_string(path)?;
+                    print!("{raw}");
+                } else {
+                    eprintln!("no config file found; showing defaults");
+                    let yaml = serde_yaml_ng::to_string(&config)?;
+                    print!("{yaml}");
+                }
+            }
+            Ok(())
+        }
+
+        Commands::Version { short } => {
+            let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            let strategy = build_local_strategy(config)?;
+            let plan = strategy.plan()?;
+            if short {
+                println!("{}", plan.next_version);
+            } else {
+                println!(
+                    "{} -> {} ({})",
+                    plan.current_version
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "none".to_string()),
+                    plan.next_version,
+                    plan.bump
+                );
+            }
+            Ok(())
+        }
+
+        Commands::Plan { format } => {
+            let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            let strategy = build_local_strategy(config)?;
+            let plan = strategy.plan()?;
+            match format {
+                PlanFormat::Json => {
+                    println!("{}", serde_json::to_string_pretty(&plan)?);
+                }
+                PlanFormat::Human => {
+                    println!("Next release: {}", plan.tag_name);
+                    println!(
+                        "Current version: {}",
+                        plan.current_version
+                            .as_ref()
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "none".to_string())
+                    );
+                    println!("Next version: {}", plan.next_version);
+                    println!("Bump: {}", plan.bump);
+                    println!("Commits ({})", plan.commits.len());
+                    for commit in &plan.commits {
+                        let scope = commit
+                            .scope
+                            .as_deref()
+                            .map(|s| format!("({s})"))
+                            .unwrap_or_default();
+                        let breaking = if commit.breaking { " BREAKING" } else { "" };
+                        println!(
+                            "  - {}{scope}: {}{breaking} ({})",
+                            commit.r#type,
+                            commit.description,
+                            &commit.sha[..7.min(commit.sha.len())]
+                        );
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        Commands::Changelog { write } => {
+            let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            let strategy = build_local_strategy(config.clone())?;
+            let plan = strategy.plan()?;
+
+            let formatter = DefaultChangelogFormatter::new(
+                config.changelog.template.clone(),
+                config.types.clone(),
+                config.breaking_section.clone(),
+            );
+            let today = sr_core::release::today_string();
+            let entry = sr_core::changelog::ChangelogEntry {
+                version: plan.next_version.to_string(),
+                date: today,
+                commits: plan.commits,
+                compare_url: None,
+            };
+            let changelog = sr_core::changelog::ChangelogFormatter::format(&formatter, &[entry])?;
+
+            if write {
+                let file = config.changelog.file.as_deref().unwrap_or("CHANGELOG.md");
+                let path = Path::new(file);
+                let existing = if path.exists() {
+                    std::fs::read_to_string(path)?
+                } else {
+                    String::new()
+                };
+                let content = if existing.is_empty() {
+                    format!("# Changelog\n\n{changelog}\n")
+                } else {
+                    match existing.find("\n\n") {
+                        Some(pos) => {
+                            let (header, rest) = existing.split_at(pos);
+                            format!("{header}\n\n{changelog}\n{rest}")
+                        }
+                        None => format!("{existing}\n\n{changelog}\n"),
+                    }
+                };
+                std::fs::write(path, content)?;
+                eprintln!("wrote {file}");
+            } else {
+                println!("{changelog}");
+            }
+            Ok(())
+        }
+
+        Commands::Release { dry_run } => {
+            let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+
+            // Try to build with GitHub; fall back to local-only if no token
+            match build_full_strategy(config.clone()) {
+                Ok(strategy) => {
+                    let plan = strategy.plan()?;
+                    strategy.execute(&plan, dry_run)?;
+                }
+                Err(e) => {
+                    if dry_run {
+                        eprintln!("warning: {e} (continuing dry-run without GitHub)");
+                        let strategy = build_local_strategy(config)?;
+                        let plan = strategy.plan()?;
+                        strategy.execute(&plan, dry_run)?;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}

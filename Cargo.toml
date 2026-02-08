@@ -1,0 +1,46 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/urmzd/semantic-release"
+
+[workspace.dependencies]
+# Internal crates
+sr-core = { path = "crates/sr-core" }
+sr-git = { path = "crates/sr-git" }
+sr-github = { path = "crates/sr-github" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+
+# Git
+git-conventional = "0.12"
+
+# Versioning
+semver = { version = "1", features = ["serde"] }
+
+# Templating
+minijinja = "2"
+
+# GitHub API
+octocrab = "0.44"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Serialization (JSON)
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Testing
+tempfile = "3"
