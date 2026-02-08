@@ -149,8 +149,7 @@ fn bump_pom_xml(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
 
 fn bump_go_version(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
     let contents = read_file(path)?;
-    let re =
-        Regex::new(r#"((?:var|const)\s+Version\s*(?:string\s*)?=\s*")([^"]*)(")"#).unwrap();
+    let re = Regex::new(r#"((?:var|const)\s+Version\s*(?:string\s*)?=\s*")([^"]*)(")"#).unwrap();
     if !re.is_match(&contents) {
         return Err(ReleaseError::VersionBump(format!(
             "no Version variable found in {}",

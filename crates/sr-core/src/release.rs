@@ -718,8 +718,11 @@ mod tests {
 
     #[test]
     fn execute_commits_changelog_before_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        let changelog_path = dir.path().join("CHANGELOG.md");
+
         let mut config = ReleaseConfig::default();
-        config.changelog.file = Some("CHANGELOG.md".into());
+        config.changelog.file = Some(changelog_path.to_str().unwrap().to_string());
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -728,7 +731,10 @@ mod tests {
         // Verify changelog was committed
         let committed = s.git.committed.lock().unwrap();
         assert_eq!(committed.len(), 1);
-        assert_eq!(committed[0].0, vec!["CHANGELOG.md"]);
+        assert_eq!(
+            committed[0].0,
+            vec![changelog_path.to_str().unwrap().to_string()]
+        );
         assert!(committed[0].1.contains("chore(release): v0.1.0"));
 
         // Verify tag was created after commit
@@ -925,8 +931,10 @@ mod tests {
         )
         .unwrap();
 
+        let changelog_path = dir.path().join("CHANGELOG.md");
+
         let mut config = ReleaseConfig::default();
-        config.changelog.file = Some("CHANGELOG.md".into());
+        config.changelog.file = Some(changelog_path.to_str().unwrap().to_string());
         config.version_files = vec![cargo_path.to_str().unwrap().to_string()];
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
@@ -936,7 +944,11 @@ mod tests {
         // Both changelog and version file should be staged in a single commit
         let committed = s.git.committed.lock().unwrap();
         assert_eq!(committed.len(), 1);
-        assert!(committed[0].0.contains(&"CHANGELOG.md".to_string()));
+        assert!(
+            committed[0]
+                .0
+                .contains(&changelog_path.to_str().unwrap().to_string())
+        );
         assert!(
             committed[0]
                 .0
