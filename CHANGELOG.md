@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.0 (2026-02-08)
+
+### Features
+
+- add release artifact upload support ([3fa9ea7](https://github.com/urmzd/semantic-release/commit/3fa9ea720e48af6728c799c251c3075bf944a6f7))
+
+### Bug Fixes
+
+- update workspace dependency versions during Cargo.toml version bump ([c7a6634](https://github.com/urmzd/semantic-release/commit/c7a66349a828905f5ab473c9490bd01f035cb088))
+
+### Miscellaneous
+
+- fix clippy warnings, apply cargo fmt, and fix commit-msg hook PCRE parsing ([2611a1c](https://github.com/urmzd/semantic-release/commit/2611a1caf59717a91cf9d005646582b59c95ea57))
+- update Cargo.lock for v0.7.0 ([e56772c](https://github.com/urmzd/semantic-release/commit/e56772cde97f758146d0b8dc50f4ad42786fd8fa))
+
+### Contributors
+
+- @urmzd
+
+
 ## 0.7.0 (2026-02-08)
 
 ### Features
