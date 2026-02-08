@@ -270,7 +270,7 @@ where
                 paths_to_stage.push(file.as_str());
             }
             if !paths_to_stage.is_empty() {
-                let commit_msg = format!("chore(release): {}", plan.tag_name);
+                let commit_msg = format!("chore(release): {} [skip ci]", plan.tag_name);
                 self.git
                     .stage_and_commit(&paths_to_stage, &commit_msg)
                     .map_err(&run_failure_hooks)?;
