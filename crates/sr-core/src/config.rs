@@ -18,6 +18,7 @@ pub struct ReleaseConfig {
     pub changelog: ChangelogConfig,
     pub hooks: HooksConfig,
     pub version_files: Vec<String>,
+    pub version_files_strict: bool,
 }
 
 impl Default for ReleaseConfig {
@@ -32,6 +33,7 @@ impl Default for ReleaseConfig {
             changelog: ChangelogConfig::default(),
             hooks: HooksConfig::default(),
             version_files: vec![],
+            version_files_strict: false,
         }
     }
 }
@@ -114,6 +116,7 @@ mod tests {
         assert!(config.hooks.post_tag.is_empty());
         assert!(config.hooks.post_release.is_empty());
         assert!(config.hooks.on_failure.is_empty());
+        assert!(!config.version_files_strict);
     }
 
     #[test]

@@ -1,14 +1,20 @@
 use std::fs;
 use std::path::Path;
 
+use regex::Regex;
+
 use crate::error::ReleaseError;
 
 /// Bump the `version` field in the given manifest file.
 ///
 /// The file format is auto-detected from the filename:
-/// - `Cargo.toml`      → TOML (`package.version` or `workspace.package.version`)
-/// - `package.json`    → JSON (`.version`)
-/// - `pyproject.toml`  → TOML (`project.version` or `tool.poetry.version`)
+/// - `Cargo.toml`          → TOML (`package.version` or `workspace.package.version`)
+/// - `package.json`        → JSON (`.version`)
+/// - `pyproject.toml`      → TOML (`project.version` or `tool.poetry.version`)
+/// - `build.gradle`        → Gradle Groovy DSL (`version = '...'` or `version = "..."`)
+/// - `build.gradle.kts`    → Gradle Kotlin DSL (`version = "..."`)
+/// - `pom.xml`             → Maven (`<version>...</version>`, skipping `<parent>` block)
+/// - `*.go`                → Go (`var/const Version = "..."`)
 pub fn bump_version_file(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
     let filename = path
         .file_name()
@@ -19,6 +25,9 @@ pub fn bump_version_file(path: &Path, new_version: &str) -> Result<(), ReleaseEr
         "Cargo.toml" => bump_cargo_toml(path, new_version),
         "package.json" => bump_package_json(path, new_version),
         "pyproject.toml" => bump_pyproject_toml(path, new_version),
+        "pom.xml" => bump_pom_xml(path, new_version),
+        "build.gradle" | "build.gradle.kts" => bump_gradle(path, new_version),
+        _ if filename.ends_with(".go") => bump_go_version(path, new_version),
         other => Err(ReleaseError::VersionBump(format!(
             "unsupported version file: {other}"
         ))),
@@ -94,6 +103,62 @@ fn bump_pyproject_toml(path: &Path, new_version: &str) -> Result<(), ReleaseErro
     }
 
     write_file(path, &doc.to_string())
+}
+
+fn bump_gradle(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
+    let contents = read_file(path)?;
+    let re = Regex::new(r#"(version\s*=\s*["'])([^"']*)(["'])"#).unwrap();
+    if !re.is_match(&contents) {
+        return Err(ReleaseError::VersionBump(format!(
+            "no version assignment found in {}",
+            path.display()
+        )));
+    }
+    let result = re.replacen(&contents, 1, format!("${{1}}{new_version}${{3}}"));
+    write_file(path, &result)
+}
+
+fn bump_pom_xml(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
+    let contents = read_file(path)?;
+
+    // Determine search start: skip past </parent> if present, else after </modelVersion>
+    let search_start = if let Some(pos) = contents.find("</parent>") {
+        pos + "</parent>".len()
+    } else if let Some(pos) = contents.find("</modelVersion>") {
+        pos + "</modelVersion>".len()
+    } else {
+        0
+    };
+
+    let rest = &contents[search_start..];
+    let re = Regex::new(r"<version>[^<]*</version>").unwrap();
+    if let Some(m) = re.find(rest) {
+        let replacement = format!("<version>{new_version}</version>");
+        let mut result = String::with_capacity(contents.len());
+        result.push_str(&contents[..search_start + m.start()]);
+        result.push_str(&replacement);
+        result.push_str(&contents[search_start + m.end()..]);
+        write_file(path, &result)
+    } else {
+        Err(ReleaseError::VersionBump(format!(
+            "no <version> element found in {}",
+            path.display()
+        )))
+    }
+}
+
+fn bump_go_version(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
+    let contents = read_file(path)?;
+    let re =
+        Regex::new(r#"((?:var|const)\s+Version\s*(?:string\s*)?=\s*")([^"]*)(")"#).unwrap();
+    if !re.is_match(&contents) {
+        return Err(ReleaseError::VersionBump(format!(
+            "no Version variable found in {}",
+            path.display()
+        )));
+    }
+    let result = re.replacen(&contents, 1, format!("${{1}}{new_version}${{3}}"));
+    write_file(path, &result)
 }
 
 fn read_file(path: &Path) -> Result<String, ReleaseError> {
@@ -233,5 +298,160 @@ description = "A poetry project"
         let err = bump_version_file(&path, "1.0.0").unwrap_err();
         assert!(matches!(err, ReleaseError::VersionBump(_)));
         assert!(err.to_string().contains("unsupported"));
+    }
+
+    #[test]
+    fn bump_build_gradle_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("build.gradle");
+        fs::write(
+            &path,
+            r#"plugins {
+    id 'java'
+}
+
+group = 'com.example'
+version = '1.0.0'
+
+dependencies {
+    implementation 'org.slf4j:slf4j-api:2.0.0'
+}
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "2.0.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("version = '2.0.0'"));
+        assert!(contents.contains("group = 'com.example'"));
+        // dependency version must not change
+        assert!(contents.contains("slf4j-api:2.0.0"));
+    }
+
+    #[test]
+    fn bump_build_gradle_kts_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("build.gradle.kts");
+        fs::write(
+            &path,
+            r#"plugins {
+    kotlin("jvm") version "1.9.0"
+}
+
+group = "com.example"
+version = "1.0.0"
+
+dependencies {
+    implementation("org.slf4j:slf4j-api:2.0.0")
+}
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "3.0.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("version = \"3.0.0\""));
+        assert!(contents.contains("group = \"com.example\""));
+    }
+
+    #[test]
+    fn bump_pom_xml_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pom.xml");
+        fs::write(
+            &path,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<project>
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.example</groupId>
+    <artifactId>my-app</artifactId>
+    <version>1.0.0</version>
+</project>
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "2.0.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("<version>2.0.0</version>"));
+        assert!(contents.contains("<groupId>com.example</groupId>"));
+    }
+
+    #[test]
+    fn bump_pom_xml_with_parent_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pom.xml");
+        fs::write(
+            &path,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<project>
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.example</groupId>
+        <artifactId>parent</artifactId>
+        <version>5.0.0</version>
+    </parent>
+    <artifactId>my-app</artifactId>
+    <version>1.0.0</version>
+</project>
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "2.0.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        // Parent version must NOT be changed
+        assert!(contents.contains("<version>5.0.0</version>"));
+        // Project version must be changed
+        assert!(contents.contains("<version>2.0.0</version>"));
+        // Verify there are exactly two <version> tags with expected values
+        let version_count: Vec<&str> = contents.matches("<version>").collect();
+        assert_eq!(version_count.len(), 2);
+    }
+
+    #[test]
+    fn bump_go_version_var() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("version.go");
+        fs::write(
+            &path,
+            r#"package main
+
+var Version = "1.0.0"
+
+func main() {}
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "2.0.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains(r#"var Version = "2.0.0""#));
+    }
+
+    #[test]
+    fn bump_go_version_const() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("version.go");
+        fs::write(
+            &path,
+            r#"package main
+
+const Version string = "0.5.0"
+
+func main() {}
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "0.6.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains(r#"const Version string = "0.6.0""#));
     }
 }

@@ -194,7 +194,28 @@ where
                 );
             }
             for file in &self.config.version_files {
-                eprintln!("[dry-run] Would bump version in: {file}");
+                let filename = Path::new(file)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default();
+                let supported = matches!(
+                    filename,
+                    "Cargo.toml"
+                        | "package.json"
+                        | "pyproject.toml"
+                        | "pom.xml"
+                        | "build.gradle"
+                        | "build.gradle.kts"
+                ) || filename.ends_with(".go");
+                if supported {
+                    eprintln!("[dry-run] Would bump version in: {file}");
+                } else if self.config.version_files_strict {
+                    return Err(ReleaseError::VersionBump(format!(
+                        "unsupported version file: {filename}"
+                    )));
+                } else {
+                    eprintln!("[dry-run] warning: unsupported version file, would skip: {file}");
+                }
             }
             for hook in &self.config.hooks.pre_release {
                 eprintln!("[dry-run] Would run pre-release hook: {hook}");
@@ -229,8 +250,15 @@ where
 
         // 2.5 Bump version files
         let version_str = plan.next_version.to_string();
+        let mut bumped_files: Vec<&str> = Vec::new();
         for file in &self.config.version_files {
-            bump_version_file(Path::new(file), &version_str).map_err(&run_failure_hooks)?;
+            match bump_version_file(Path::new(file), &version_str) {
+                Ok(()) => bumped_files.push(file.as_str()),
+                Err(e) if !self.config.version_files_strict => {
+                    eprintln!("warning: {e} — skipping {file}");
+                }
+                Err(e) => return Err(run_failure_hooks(e)),
+            }
         }
 
         // 3. Write changelog file if configured
@@ -266,8 +294,8 @@ where
             if let Some(ref changelog_file) = self.config.changelog.file {
                 paths_to_stage.push(changelog_file.as_str());
             }
-            for file in &self.config.version_files {
-                paths_to_stage.push(file.as_str());
+            for file in &bumped_files {
+                paths_to_stage.push(*file);
             }
             if !paths_to_stage.is_empty() {
                 let commit_msg = format!("chore(release): {} [skip ci]", plan.tag_name);
