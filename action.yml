@@ -23,6 +23,14 @@ inputs:
     description: "GitHub token for creating releases"
     required: false
     default: ${{ github.token }}
+  git-user-name:
+    description: "Git user name for tag creation"
+    required: false
+    default: "semantic-release[bot]"
+  git-user-email:
+    description: "Git user email for tag creation"
+    required: false
+    default: "semantic-release[bot]@urmzd.com"
 
 outputs:
   version:
@@ -35,6 +43,12 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Configure git identity
+      shell: bash
+      run: |
+        git config user.name "${{ inputs.git-user-name }}"
+        git config user.email "${{ inputs.git-user-email }}"
+
     - name: Download sr binary
       shell: bash
       env:

@@ -86,6 +86,8 @@ Use outputs in subsequent steps:
 | `dry-run` | Preview changes without executing them | `false` |
 | `config` | Path to the config file | `.urmzd.sr.yml` |
 | `github-token` | GitHub token for creating releases | `${{ github.token }}` |
+| `git-user-name` | Git user name for tag creation | `semantic-release[bot]` |
+| `git-user-email` | Git user email for tag creation | `semantic-release[bot]@urmzd.com` |
 
 #### Outputs
 

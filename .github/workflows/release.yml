@@ -68,6 +68,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -85,11 +90,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ./target/release/sr release; then
+          OUTPUT=$(./target/release/sr release 2>&1) && RC=0 || RC=$?
+          echo "$OUTPUT"
+          if [ $RC -eq 0 ]; then
             echo "released=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "sr release exited non-zero — no bump needed or error occurred"
+          elif echo "$OUTPUT" | grep -q "no releasable commits"; then
+            echo "No releasable commits — skipping release"
             echo "released=false" >> "$GITHUB_OUTPUT"
+          else
+            exit $RC
           fi
 
       - name: Upload binaries to release
