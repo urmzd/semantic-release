@@ -36,15 +36,19 @@ default_types="feat fix perf chore docs ci refactor test build style revert"
 
 if [ -f "$config_file" ]; then
     # Extract commit_pattern from config (first match, strip YAML key + quotes)
-    cfg_pattern=$(sed -n "s/^commit_pattern: *['\"]\\{0,1\\}\(.*\\)['\"]\\{0,1\\}$/\\1/p" "$config_file" | head -n1)
+    cfg_pattern=$(sed -n "s/^commit_pattern: *//p" "$config_file" | head -n1)
+    # Strip surrounding quotes if present
+    cfg_pattern=$(echo "$cfg_pattern" | sed "s/^['\"]//; s/['\"]$//")
 
     # Extract type names from the types list
     cfg_types=$(sed -n 's/^  *- *name: *//p' "$config_file" | tr '\n' ' ')
 
     # Use config values if found, otherwise defaults
     if [ -n "$cfg_pattern" ]; then
-        # Convert named groups (?P<name>...) to plain groups (...) for grep -E
-        pattern=$(echo "$cfg_pattern" | sed 's/(?P<[^>]*>/(/g')
+        # Convert PCRE syntax to POSIX ERE for grep -E:
+        #  - Named groups (?P<name>...) -> (...)
+        #  - Non-capturing groups (?:...) -> (...)
+        pattern=$(echo "$cfg_pattern" | sed 's/(?P<[^>]*>/(/g; s/(?:/(/g')
     else
         pattern="$default_pattern"
     fi

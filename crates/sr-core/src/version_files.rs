@@ -57,10 +57,11 @@ fn bump_cargo_toml(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
             .and_then(|d| d.as_table_like_mut())
         {
             for (_, dep) in deps.iter_mut() {
-                if let Some(tbl) = dep.as_table_like_mut() {
-                    if tbl.get("path").is_some() && tbl.get("version").is_some() {
-                        tbl.insert("version", toml_edit::value(new_version));
-                    }
+                if let Some(tbl) = dep.as_table_like_mut()
+                    && tbl.get("path").is_some()
+                    && tbl.get("version").is_some()
+                {
+                    tbl.insert("version", toml_edit::value(new_version));
                 }
             }
         }

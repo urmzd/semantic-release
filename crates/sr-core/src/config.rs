@@ -166,8 +166,11 @@ mod tests {
     fn load_yaml_with_artifacts() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.yml");
-        std::fs::write(&path, "artifacts:\n  - \"dist/*.tar.gz\"\n  - \"build/output-*\"\n")
-            .unwrap();
+        std::fs::write(
+            &path,
+            "artifacts:\n  - \"dist/*.tar.gz\"\n  - \"build/output-*\"\n",
+        )
+        .unwrap();
 
         let config = ReleaseConfig::load(&path).unwrap();
         assert_eq!(config.artifacts, vec!["dist/*.tar.gz", "build/output-*"]);

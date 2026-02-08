@@ -371,14 +371,14 @@ where
         }
 
         // 9.5 Upload artifacts
-        if self.vcs.is_some() && !self.config.artifacts.is_empty() {
-            let resolved = resolve_artifact_globs(&self.config.artifacts).map_err(&run_failure_hooks)?;
+        if let Some(ref vcs) = self.vcs
+            && !self.config.artifacts.is_empty()
+        {
+            let resolved =
+                resolve_artifact_globs(&self.config.artifacts).map_err(&run_failure_hooks)?;
             if !resolved.is_empty() {
                 let file_refs: Vec<&str> = resolved.iter().map(|s| s.as_str()).collect();
-                self.vcs
-                    .as_ref()
-                    .unwrap()
-                    .upload_assets(&plan.tag_name, &file_refs)
+                vcs.upload_assets(&plan.tag_name, &file_refs)
                     .map_err(&run_failure_hooks)?;
                 eprintln!(
                     "Uploaded {} artifact(s) to {}",
