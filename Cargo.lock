@@ -381,7 +381,7 @@ dependencies = [
 
 [[package]]
 name = "sr-cli"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -396,7 +396,7 @@ dependencies = [
 
 [[package]]
 name = "sr-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "minijinja",
@@ -412,7 +412,7 @@ dependencies = [
 
 [[package]]
 name = "sr-git"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "semver",
  "sr-core",
@@ -421,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "sr-github"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "sr-core",
 ]
