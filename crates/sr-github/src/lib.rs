@@ -26,15 +26,7 @@ impl VcsProvider for GitHubProvider {
         let repo_slug = format!("{}/{}", self.owner, self.repo);
 
         let mut args = vec![
-            "release",
-            "create",
-            tag,
-            "--repo",
-            &repo_slug,
-            "--title",
-            name,
-            "--notes",
-            body,
+            "release", "create", tag, "--repo", &repo_slug, "--title", name, "--notes", body,
         ];
 
         if prerelease {
@@ -48,7 +40,9 @@ impl VcsProvider for GitHubProvider {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ReleaseError::Vcs(format!("gh release create failed: {stderr}")));
+            return Err(ReleaseError::Vcs(format!(
+                "gh release create failed: {stderr}"
+            )));
         }
 
         let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
