@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.7.0 (2026-02-08)
+
+### Features
+
+- expand version file support, add lenient mode, fix root Cargo.toml ([487e5f4](https://github.com/urmzd/semantic-release/commit/487e5f4aa21a1d9e22298efebe310be0f193297c))
+
+### Bug Fixes
+
+- use tempdir in release tests to prevent changelog file pollution ([52e854d](https://github.com/urmzd/semantic-release/commit/52e854d2ccc13dea844d6cfe74e8e233063c24f8))
+- add skip-ci flag to release commit messages to avoid redundant CI runs ([87160a8](https://github.com/urmzd/semantic-release/commit/87160a89b2650d52cacfd23db6c46dcaa3c7ffa8))
+
+### Miscellaneous
+
+- add floating v0 tag, update docs, and prepare crates.io publishing ([bda72c2](https://github.com/urmzd/semantic-release/commit/bda72c2242f9119c99ff8850736c64255fa2ff0b))
+
+### Contributors
+
+- @urmzd
+
+
 ## 0.6.0 (2026-02-08)
 
 ### Features
