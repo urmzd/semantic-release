@@ -27,15 +27,11 @@ pub fn bump_version_file(path: &Path, new_version: &str) -> Result<(), ReleaseEr
 
 fn bump_cargo_toml(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
     let contents = read_file(path)?;
-    let mut doc: toml_edit::DocumentMut = contents
-        .parse()
-        .map_err(|e| ReleaseError::VersionBump(format!("failed to parse {}: {e}", path.display())))?;
+    let mut doc: toml_edit::DocumentMut = contents.parse().map_err(|e| {
+        ReleaseError::VersionBump(format!("failed to parse {}: {e}", path.display()))
+    })?;
 
-    if doc
-        .get("package")
-        .and_then(|p| p.get("version"))
-        .is_some()
-    {
+    if doc.get("package").and_then(|p| p.get("version")).is_some() {
         doc["package"]["version"] = toml_edit::value(new_version);
     } else if doc
         .get("workspace")
@@ -56,31 +52,32 @@ fn bump_cargo_toml(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
 
 fn bump_package_json(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
     let contents = read_file(path)?;
-    let mut value: serde_json::Value = serde_json::from_str(&contents)
-        .map_err(|e| ReleaseError::VersionBump(format!("failed to parse {}: {e}", path.display())))?;
+    let mut value: serde_json::Value = serde_json::from_str(&contents).map_err(|e| {
+        ReleaseError::VersionBump(format!("failed to parse {}: {e}", path.display()))
+    })?;
 
     value
         .as_object_mut()
         .ok_or_else(|| ReleaseError::VersionBump("package.json is not an object".into()))?
-        .insert("version".into(), serde_json::Value::String(new_version.into()));
+        .insert(
+            "version".into(),
+            serde_json::Value::String(new_version.into()),
+        );
 
-    let output = serde_json::to_string_pretty(&value)
-        .map_err(|e| ReleaseError::VersionBump(format!("failed to serialize {}: {e}", path.display())))?;
+    let output = serde_json::to_string_pretty(&value).map_err(|e| {
+        ReleaseError::VersionBump(format!("failed to serialize {}: {e}", path.display()))
+    })?;
 
     write_file(path, &format!("{output}\n"))
 }
 
 fn bump_pyproject_toml(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
     let contents = read_file(path)?;
-    let mut doc: toml_edit::DocumentMut = contents
-        .parse()
-        .map_err(|e| ReleaseError::VersionBump(format!("failed to parse {}: {e}", path.display())))?;
+    let mut doc: toml_edit::DocumentMut = contents.parse().map_err(|e| {
+        ReleaseError::VersionBump(format!("failed to parse {}: {e}", path.display()))
+    })?;
 
-    if doc
-        .get("project")
-        .and_then(|p| p.get("version"))
-        .is_some()
-    {
+    if doc.get("project").and_then(|p| p.get("version")).is_some() {
         doc["project"]["version"] = toml_edit::value(new_version);
     } else if doc
         .get("tool")

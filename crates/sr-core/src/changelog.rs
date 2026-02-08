@@ -218,10 +218,7 @@ mod tests {
 
     #[test]
     fn format_with_commit_links() {
-        let mut e = entry(
-            vec![make_commit("feat", "add button", None, false)],
-            None,
-        );
+        let mut e = entry(vec![make_commit("feat", "add button", None, false)], None);
         e.repo_url = Some("https://github.com/o/r".into());
         let out = format(&[e]);
         assert!(out.contains("[abc1234](https://github.com/o/r/commit/abc1234def5678)"));

@@ -161,12 +161,12 @@ pub struct DefaultCommitParser;
 
 impl CommitParser for DefaultCommitParser {
     fn parse(&self, commit: &Commit) -> Result<ConventionalCommit, ReleaseError> {
-        let re = Regex::new(DEFAULT_COMMIT_PATTERN)
-            .map_err(|e| ReleaseError::Config(e.to_string()))?;
+        let re =
+            Regex::new(DEFAULT_COMMIT_PATTERN).map_err(|e| ReleaseError::Config(e.to_string()))?;
 
-        let caps = re
-            .captures(&commit.message)
-            .ok_or_else(|| ReleaseError::Config(format!("not a conventional commit: {}", commit.message)))?;
+        let caps = re.captures(&commit.message).ok_or_else(|| {
+            ReleaseError::Config(format!("not a conventional commit: {}", commit.message))
+        })?;
 
         let r#type = caps.name("type").unwrap().as_str().to_string();
         let scope = caps.name("scope").map(|m| m.as_str().to_string());
@@ -175,8 +175,8 @@ impl CommitParser for DefaultCommitParser {
 
         let body = commit
             .message
-            .splitn(2, "\n\n")
-            .nth(1)
+            .split_once("\n\n")
+            .map(|x| x.1)
             .map(|b| b.to_string());
 
         Ok(ConventionalCommit {

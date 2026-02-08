@@ -196,9 +196,10 @@ where
 
         let failure_ctx = build_hook_context(plan, "on_failure", false);
         let run_failure_hooks = |err: ReleaseError| -> ReleaseError {
-            let _ = self
-                .hooks
-                .run(&to_hook_commands(&self.config.hooks.on_failure), &failure_ctx);
+            let _ = self.hooks.run(
+                &to_hook_commands(&self.config.hooks.on_failure),
+                &failure_ctx,
+            );
             err
         };
 
@@ -289,7 +290,10 @@ where
         // 8. Post-tag hooks
         let post_tag_ctx = build_hook_context(plan, "post_tag", false);
         self.hooks
-            .run(&to_hook_commands(&self.config.hooks.post_tag), &post_tag_ctx)
+            .run(
+                &to_hook_commands(&self.config.hooks.post_tag),
+                &post_tag_ctx,
+            )
             .map_err(&run_failure_hooks)?;
 
         // 9. Create GitHub release (skip if exists, or update it)
@@ -310,7 +314,10 @@ where
         // 10. Post-release hooks
         let post_release_ctx = build_hook_context(plan, "post_release", false);
         self.hooks
-            .run(&to_hook_commands(&self.config.hooks.post_release), &post_release_ctx)
+            .run(
+                &to_hook_commands(&self.config.hooks.post_release),
+                &post_release_ctx,
+            )
             .map_err(&run_failure_hooks)?;
 
         eprintln!("Released {}", plan.tag_name);
@@ -767,10 +774,7 @@ mod tests {
 
         let s = make_strategy(
             vec![tag],
-            vec![
-                raw_commit("feat: first"),
-                raw_commit("fix: second"),
-            ],
+            vec![raw_commit("feat: first"), raw_commit("fix: second")],
             config,
         );
         let plan = s.plan().unwrap();
@@ -796,7 +800,10 @@ mod tests {
 
         // post_release context
         let post_release = &ctx_log[2];
-        assert_eq!(post_release.env.get("SR_HOOK_PHASE").unwrap(), "post_release");
+        assert_eq!(
+            post_release.env.get("SR_HOOK_PHASE").unwrap(),
+            "post_release"
+        );
         assert_eq!(post_release.env.get("SR_VERSION").unwrap(), "1.3.0");
     }
 
@@ -805,11 +812,7 @@ mod tests {
         let mut config = ReleaseConfig::default();
         config.hooks.pre_release = vec!["echo pre".into()];
 
-        let s = make_strategy(
-            vec![],
-            vec![raw_commit("feat: initial")],
-            config,
-        );
+        let s = make_strategy(vec![], vec![raw_commit("feat: initial")], config);
         let plan = s.plan().unwrap();
         s.execute(&plan, false).unwrap();
 
@@ -844,7 +847,11 @@ mod tests {
         // Verify it was staged alongside the commit
         let committed = s.git.committed.lock().unwrap();
         assert_eq!(committed.len(), 1);
-        assert!(committed[0].0.contains(&cargo_path.to_str().unwrap().to_string()));
+        assert!(
+            committed[0]
+                .0
+                .contains(&cargo_path.to_str().unwrap().to_string())
+        );
     }
 
     #[test]
@@ -869,6 +876,10 @@ mod tests {
         let committed = s.git.committed.lock().unwrap();
         assert_eq!(committed.len(), 1);
         assert!(committed[0].0.contains(&"CHANGELOG.md".to_string()));
-        assert!(committed[0].0.contains(&cargo_path.to_str().unwrap().to_string()));
+        assert!(
+            committed[0]
+                .0
+                .contains(&cargo_path.to_str().unwrap().to_string())
+        );
     }
 }
