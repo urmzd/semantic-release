@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 (2026-02-08)
+
+### Features
+
+- add changelog --regenerate flag and improve changelog sections ([799c0f7](https://github.com/urmzd/semantic-release/commit/799c0f7854956f79554e712bfb07beccf6a83c47))
+
+### Miscellaneous
+
+- remove redundant push trigger from CI workflow ([4ece192](https://github.com/urmzd/semantic-release/commit/4ece1927a60234a4335eaf5aef97a691d14e159d))
+
+### Contributors
+
+- Urmzd Mukhammadnaim
+
+
 ## 0.4.0 (2026-02-08)
 
 ### Features
