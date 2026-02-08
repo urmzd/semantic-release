@@ -161,6 +161,38 @@ impl GitRepository for NativeGitRepository {
         self.git(&["push", "origin", name])?;
         Ok(())
     }
+
+    fn stage_and_commit(&self, paths: &[&str], message: &str) -> Result<bool, ReleaseError> {
+        let mut args = vec!["add", "--"];
+        args.extend(paths);
+        self.git(&args)?;
+
+        let status = self.git(&["status", "--porcelain"]);
+        match status {
+            Ok(s) if s.is_empty() => Ok(false),
+            _ => {
+                self.git(&["commit", "-m", message])?;
+                Ok(true)
+            }
+        }
+    }
+
+    fn push(&self) -> Result<(), ReleaseError> {
+        self.git(&["push", "origin", "HEAD"])?;
+        Ok(())
+    }
+
+    fn tag_exists(&self, name: &str) -> Result<bool, ReleaseError> {
+        match self.git(&["rev-parse", "--verify", &format!("refs/tags/{name}")]) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
+    fn remote_tag_exists(&self, name: &str) -> Result<bool, ReleaseError> {
+        let output = self.git(&["ls-remote", "--tags", "origin", name])?;
+        Ok(!output.is_empty())
+    }
 }
 
 #[cfg(test)]

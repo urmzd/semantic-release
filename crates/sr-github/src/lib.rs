@@ -55,4 +55,28 @@ impl VcsProvider for GitHubProvider {
             self.owner, self.repo,
         ))
     }
+
+    fn release_exists(&self, tag: &str) -> Result<bool, ReleaseError> {
+        let repo_slug = format!("{}/{}", self.owner, self.repo);
+        let output = Command::new("gh")
+            .args(["release", "view", tag, "--repo", &repo_slug])
+            .output()
+            .map_err(|e| ReleaseError::Vcs(format!("failed to run gh: {e}")))?;
+        Ok(output.status.success())
+    }
+
+    fn delete_release(&self, tag: &str) -> Result<(), ReleaseError> {
+        let repo_slug = format!("{}/{}", self.owner, self.repo);
+        let output = Command::new("gh")
+            .args(["release", "delete", tag, "--repo", &repo_slug, "--yes"])
+            .output()
+            .map_err(|e| ReleaseError::Vcs(format!("failed to run gh: {e}")))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ReleaseError::Vcs(format!(
+                "gh release delete failed: {stderr}"
+            )));
+        }
+        Ok(())
+    }
 }

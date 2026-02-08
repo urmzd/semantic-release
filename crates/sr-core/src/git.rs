@@ -25,4 +25,16 @@ pub trait GitRepository: Send + Sync {
 
     /// Push a tag to the remote.
     fn push_tag(&self, name: &str) -> Result<(), ReleaseError>;
+
+    /// Stage files and commit. Returns Ok(false) if nothing to commit.
+    fn stage_and_commit(&self, paths: &[&str], message: &str) -> Result<bool, ReleaseError>;
+
+    /// Push current branch to origin.
+    fn push(&self) -> Result<(), ReleaseError>;
+
+    /// Check if a tag exists locally.
+    fn tag_exists(&self, name: &str) -> Result<bool, ReleaseError>;
+
+    /// Check if a tag exists on the remote.
+    fn remote_tag_exists(&self, name: &str) -> Result<bool, ReleaseError>;
 }

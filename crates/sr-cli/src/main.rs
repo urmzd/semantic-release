@@ -90,6 +90,14 @@ impl VcsProvider for NoopVcsProvider {
     ) -> Result<String, sr_core::error::ReleaseError> {
         Ok(String::new())
     }
+
+    fn release_exists(&self, _tag: &str) -> Result<bool, sr_core::error::ReleaseError> {
+        Ok(false)
+    }
+
+    fn delete_release(&self, _tag: &str) -> Result<(), sr_core::error::ReleaseError> {
+        Ok(())
+    }
 }
 
 fn build_local_strategy(

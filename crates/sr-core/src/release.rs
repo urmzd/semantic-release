@@ -44,6 +44,12 @@ pub trait VcsProvider: Send + Sync {
 
     /// Generate a compare URL between two refs.
     fn compare_url(&self, base: &str, head: &str) -> Result<String, ReleaseError>;
+
+    /// Check if a release already exists for the given tag.
+    fn release_exists(&self, tag: &str) -> Result<bool, ReleaseError>;
+
+    /// Delete a release by tag.
+    fn delete_release(&self, tag: &str) -> Result<(), ReleaseError>;
 }
 
 /// Concrete release strategy implementing the trunk-based release flow.
@@ -137,12 +143,12 @@ where
             err
         };
 
-        // Pre-release hooks
+        // 1. Pre-release hooks
         self.hooks
             .run(&to_hook_commands(&self.config.hooks.pre_release))
             .map_err(&run_failure_hooks)?;
 
-        // Format changelog
+        // 2. Format changelog
         let changelog_body = self.format_changelog(plan).map_err(&run_failure_hooks)?;
 
         if dry_run {
@@ -158,7 +164,7 @@ where
             return Ok(());
         }
 
-        // Write changelog file if configured
+        // 3. Write changelog file if configured
         if let Some(ref changelog_file) = self.config.changelog.file {
             let path = Path::new(changelog_file);
             let existing = if path.exists() {
@@ -183,29 +189,60 @@ where
             fs::write(path, new_content)
                 .map_err(|e| ReleaseError::Changelog(e.to_string()))
                 .map_err(&run_failure_hooks)?;
+
+            // 4. Stage and commit changelog (skip if nothing to commit)
+            let commit_msg = format!("chore(release): {}", plan.tag_name);
+            self.git
+                .stage_and_commit(&[changelog_file.as_str()], &commit_msg)
+                .map_err(&run_failure_hooks)?;
         }
 
-        // Create and push tag
-        self.git
-            .create_tag(&plan.tag_name, &changelog_body)
-            .map_err(&run_failure_hooks)?;
-        self.git
-            .push_tag(&plan.tag_name)
-            .map_err(&run_failure_hooks)?;
+        // 5. Create tag (skip if it already exists locally)
+        if !self
+            .git
+            .tag_exists(&plan.tag_name)
+            .map_err(&run_failure_hooks)?
+        {
+            self.git
+                .create_tag(&plan.tag_name, &changelog_body)
+                .map_err(&run_failure_hooks)?;
+        }
 
-        // Post-tag hooks
+        // 6. Push commit (safe to re-run — no-op if up to date)
+        self.git.push().map_err(&run_failure_hooks)?;
+
+        // 7. Push tag (skip if tag already exists on remote)
+        if !self
+            .git
+            .remote_tag_exists(&plan.tag_name)
+            .map_err(&run_failure_hooks)?
+        {
+            self.git
+                .push_tag(&plan.tag_name)
+                .map_err(&run_failure_hooks)?;
+        }
+
+        // 8. Post-tag hooks
         self.hooks
             .run(&to_hook_commands(&self.config.hooks.post_tag))
             .map_err(&run_failure_hooks)?;
 
-        // Create GitHub release
+        // 9. Create GitHub release (skip if exists, or update it)
         if let Some(ref vcs) = self.vcs {
             let release_name = format!("{} {}", self.config.tag_prefix, plan.next_version);
+            if vcs
+                .release_exists(&plan.tag_name)
+                .map_err(&run_failure_hooks)?
+            {
+                // Delete and recreate to update the release notes
+                vcs.delete_release(&plan.tag_name)
+                    .map_err(&run_failure_hooks)?;
+            }
             vcs.create_release(&plan.tag_name, &release_name, &changelog_body, false)
                 .map_err(&run_failure_hooks)?;
         }
 
-        // Post-release hooks
+        // 10. Post-release hooks
         self.hooks
             .run(&to_hook_commands(&self.config.hooks.post_release))
             .map_err(&run_failure_hooks)?;
@@ -249,6 +286,8 @@ mod tests {
         commits: Vec<Commit>,
         created_tags: Mutex<Vec<String>>,
         pushed_tags: Mutex<Vec<String>>,
+        committed: Mutex<Vec<(Vec<String>, String)>>,
+        push_count: Mutex<u32>,
     }
 
     impl FakeGit {
@@ -258,6 +297,8 @@ mod tests {
                 commits,
                 created_tags: Mutex::new(Vec::new()),
                 pushed_tags: Mutex::new(Vec::new()),
+                committed: Mutex::new(Vec::new()),
+                push_count: Mutex::new(0),
             }
         }
     }
@@ -280,16 +321,43 @@ mod tests {
             self.pushed_tags.lock().unwrap().push(name.to_string());
             Ok(())
         }
+
+        fn stage_and_commit(&self, paths: &[&str], message: &str) -> Result<bool, ReleaseError> {
+            self.committed.lock().unwrap().push((
+                paths.iter().map(|s| s.to_string()).collect(),
+                message.to_string(),
+            ));
+            Ok(true)
+        }
+
+        fn push(&self) -> Result<(), ReleaseError> {
+            *self.push_count.lock().unwrap() += 1;
+            Ok(())
+        }
+
+        fn tag_exists(&self, name: &str) -> Result<bool, ReleaseError> {
+            Ok(self
+                .created_tags
+                .lock()
+                .unwrap()
+                .contains(&name.to_string()))
+        }
+
+        fn remote_tag_exists(&self, name: &str) -> Result<bool, ReleaseError> {
+            Ok(self.pushed_tags.lock().unwrap().contains(&name.to_string()))
+        }
     }
 
     struct FakeVcs {
         releases: Mutex<Vec<(String, String)>>,
+        deleted_releases: Mutex<Vec<String>>,
     }
 
     impl FakeVcs {
         fn new() -> Self {
             Self {
                 releases: Mutex::new(Vec::new()),
+                deleted_releases: Mutex::new(Vec::new()),
             }
         }
     }
@@ -311,6 +379,16 @@ mod tests {
 
         fn compare_url(&self, base: &str, head: &str) -> Result<String, ReleaseError> {
             Ok(format!("https://github.com/test/compare/{base}...{head}"))
+        }
+
+        fn release_exists(&self, tag: &str) -> Result<bool, ReleaseError> {
+            Ok(self.releases.lock().unwrap().iter().any(|(t, _)| t == tag))
+        }
+
+        fn delete_release(&self, tag: &str) -> Result<(), ReleaseError> {
+            self.deleted_releases.lock().unwrap().push(tag.to_string());
+            self.releases.lock().unwrap().retain(|(t, _)| t != tag);
+            Ok(())
         }
     }
 
@@ -491,5 +569,110 @@ mod tests {
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].0, "v0.1.0");
         assert!(!releases[0].1.is_empty());
+    }
+
+    #[test]
+    fn execute_commits_changelog_before_tag() {
+        let mut config = ReleaseConfig::default();
+        config.changelog.file = Some("CHANGELOG.md".into());
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        // Verify changelog was committed
+        let committed = s.git.committed.lock().unwrap();
+        assert_eq!(committed.len(), 1);
+        assert_eq!(committed[0].0, vec!["CHANGELOG.md"]);
+        assert!(committed[0].1.contains("chore(release): v0.1.0"));
+
+        // Verify tag was created after commit
+        assert_eq!(*s.git.created_tags.lock().unwrap(), vec!["v0.1.0"]);
+    }
+
+    #[test]
+    fn execute_skips_existing_tag() {
+        let s = make_strategy(
+            vec![],
+            vec![raw_commit("feat: something")],
+            ReleaseConfig::default(),
+        );
+        let plan = s.plan().unwrap();
+
+        // Pre-populate the tag to simulate it already existing
+        s.git
+            .created_tags
+            .lock()
+            .unwrap()
+            .push("v0.1.0".to_string());
+
+        s.execute(&plan, false).unwrap();
+
+        // Tag should not be created again (still only the one we pre-populated)
+        assert_eq!(s.git.created_tags.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn execute_skips_existing_release() {
+        let s = make_strategy(
+            vec![],
+            vec![raw_commit("feat: something")],
+            ReleaseConfig::default(),
+        );
+        let plan = s.plan().unwrap();
+
+        // Pre-populate a release to simulate it already existing
+        s.vcs
+            .as_ref()
+            .unwrap()
+            .releases
+            .lock()
+            .unwrap()
+            .push(("v0.1.0".to_string(), "old notes".to_string()));
+
+        s.execute(&plan, false).unwrap();
+
+        // Should have deleted the old release and created a new one
+        let deleted = s.vcs.as_ref().unwrap().deleted_releases.lock().unwrap();
+        assert_eq!(*deleted, vec!["v0.1.0"]);
+
+        let releases = s.vcs.as_ref().unwrap().releases.lock().unwrap();
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].0, "v0.1.0");
+        assert_ne!(releases[0].1, "old notes");
+    }
+
+    #[test]
+    fn execute_idempotent_rerun() {
+        let s = make_strategy(
+            vec![],
+            vec![raw_commit("feat: something")],
+            ReleaseConfig::default(),
+        );
+        let plan = s.plan().unwrap();
+
+        // First run
+        s.execute(&plan, false).unwrap();
+
+        // Second run should also succeed (idempotent)
+        s.execute(&plan, false).unwrap();
+
+        // Tag should only have been created once (second run skips because tag_exists)
+        assert_eq!(s.git.created_tags.lock().unwrap().len(), 1);
+
+        // Tag push should only happen once (second run skips because remote_tag_exists)
+        assert_eq!(s.git.pushed_tags.lock().unwrap().len(), 1);
+
+        // Push (commit) should happen twice (always safe)
+        assert_eq!(*s.git.push_count.lock().unwrap(), 2);
+
+        // Release should be deleted and recreated on second run
+        let deleted = s.vcs.as_ref().unwrap().deleted_releases.lock().unwrap();
+        assert_eq!(*deleted, vec!["v0.1.0"]);
+
+        let releases = s.vcs.as_ref().unwrap().releases.lock().unwrap();
+        // One entry: delete removed the first, create added a replacement
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].0, "v0.1.0");
     }
 }
