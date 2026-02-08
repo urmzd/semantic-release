@@ -21,8 +21,9 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 
 ## Features
 
-- Conventional Commits parsing (via `git-conventional`)
+- Conventional Commits parsing (built-in, configurable via `commit_pattern`)
 - Semantic versioning bumps (major / minor / patch)
+- Automatic version file bumping (`Cargo.toml`, `package.json`, `pyproject.toml`)
 - Changelog generation (Jinja2 templates via `minijinja`)
 - GitHub Releases (via `gh` CLI)
 - Lifecycle hooks (`pre_release`, `post_tag`, `post_release`, `on_failure`)
@@ -82,7 +83,7 @@ Use outputs in subsequent steps:
 
 | Input | Description | Default |
 |-------|-------------|---------|
-| `command` | The `sr` subcommand to run (`release`, `plan`, `changelog`, `version`, `config`) | `release` |
+| `command` | The `sr` subcommand to run (`release`, `plan`, `changelog`, `version`, `config`, `completions`) | `release` |
 | `dry-run` | Preview changes without executing them | `false` |
 | `config` | Path to the config file | `.urmzd.sr.yml` |
 | `github-token` | GitHub token for creating releases | `${{ github.token }}` |
@@ -134,12 +135,63 @@ The `gh` CLI reads the `GH_TOKEN` environment variable for authentication. The G
 # Generate a default config file
 sr init
 
-# Preview what the next release would look like
+# Preview what the next release would look like (includes changelog)
 sr plan
+
+# Dry-run a release (no side effects, no hooks executed)
+sr release --dry-run
 
 # Execute the release
 sr release
+
+# Set up shell completions (bash)
+sr completions bash >> ~/.bashrc
 ```
+
+## Developer Workflow
+
+### Commit message validation
+
+`sr` ships a `commit-msg` git hook that enforces [Conventional Commits](https://www.conventionalcommits.org/) at commit time. It reads allowed types and patterns from `.urmzd.sr.yml`, falling back to built-in defaults.
+
+**Option 1 — Native git hooks:**
+
+```bash
+# Copy the hook into your project
+curl -o .githooks/commit-msg https://raw.githubusercontent.com/urmzd/semantic-release/main/.githooks/commit-msg
+chmod +x .githooks/commit-msg
+git config core.hooksPath .githooks/
+```
+
+**Option 2 — pre-commit framework:**
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/urmzd/semantic-release
+    rev: v0.2.0
+    hooks:
+      - id: conventional-commit-msg
+```
+
+The hook validates the first line of each commit message against the pattern `<type>(<scope>): <description>`. Merge commits and rebase-generated commits (`fixup!`, `squash!`, `amend!`) are always allowed through.
+
+### End-to-end release flow
+
+```
+commit (hook validates) → push → sr plan (preview) → sr release (execute)
+```
+
+1. **Commit** — the commit-msg hook ensures every commit follows the conventional format (`feat:`, `fix:`, `feat!:`, etc.).
+2. **Preview** — run `sr plan` to see the next version, included commits, and a changelog preview.
+3. **Dry-run** — run `sr release --dry-run` to simulate the full release without side effects (no hooks are executed, no tags created).
+4. **Release** — run `sr release` to execute the full pipeline:
+   - Runs `pre_release` hooks (e.g., `cargo test`)
+   - Bumps version in configured manifest files
+   - Generates and commits the changelog (with version files)
+   - Creates and pushes the git tag
+   - Creates a GitHub release
+   - Runs `post_release` hooks
 
 ## CLI Reference
 
@@ -151,6 +203,7 @@ sr release
 | `sr version` | Show the next version |
 | `sr config` | Validate and display resolved configuration |
 | `sr init` | Create a default `.urmzd.sr.yml` config file |
+| `sr completions` | Generate shell completions (bash, zsh, fish, powershell, elvish) |
 
 ### Common flags
 
@@ -160,6 +213,7 @@ sr release
 - `sr version --short` — print only the version number
 - `sr config --resolved` — show config with defaults applied
 - `sr init --force` — overwrite existing config file
+- `sr completions bash` — generate Bash completions
 
 ## Configuration
 
@@ -178,6 +232,12 @@ changelog:
   file: CHANGELOG.md       # Path to the changelog file (optional)
   template: null            # Custom Jinja2 template (optional)
 
+# Version files to bump automatically
+version_files:
+  - Cargo.toml
+  # - package.json
+  # - pyproject.toml
+
 # Lifecycle hooks — shell commands run at each phase
 hooks:
   pre_release:              # Before tagging
@@ -192,6 +252,14 @@ commit_types: {}
 #   docs: patch
 #   refactor: patch
 ```
+
+### Supported version files
+
+| Filename | Key updated | Notes |
+|---|---|---|
+| `Cargo.toml` | `package.version` (or `workspace.package.version`) | Preserves formatting and comments |
+| `package.json` | `version` | Pretty-printed JSON output |
+| `pyproject.toml` | `project.version` (or `tool.poetry.version`) | Preserves formatting and comments |
 
 ### Default commit-type mapping
 
