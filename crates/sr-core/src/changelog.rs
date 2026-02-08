@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::commit::{CommitType, ConventionalCommit};
 use crate::error::ReleaseError;
@@ -11,6 +11,25 @@ pub struct ChangelogEntry {
     pub commits: Vec<ConventionalCommit>,
     pub compare_url: Option<String>,
     pub repo_url: Option<String>,
+    /// Maps git author names to GitHub `@username` strings.
+    pub contributor_map: HashMap<String, String>,
+}
+
+impl ChangelogEntry {
+    /// Returns deduplicated `(author_name, sha)` pairs from commits.
+    /// Uses the first SHA encountered for each unique author.
+    pub fn unique_author_shas(&self) -> Vec<(&str, &str)> {
+        let mut seen = BTreeSet::new();
+        let mut result = Vec::new();
+        for c in &self.commits {
+            if let Some(ref author) = c.author
+                && seen.insert(author.as_str())
+            {
+                result.push((author.as_str(), c.sha.as_str()));
+            }
+        }
+        result
+    }
 }
 
 /// Formats changelog entries into a string representation.
@@ -123,7 +142,11 @@ impl ChangelogFormatter for DefaultChangelogFormatter {
             if !authors.is_empty() {
                 output.push_str("\n### Contributors\n\n");
                 for author in &authors {
-                    output.push_str(&format!("- {author}\n"));
+                    let display = entry
+                        .contributor_map
+                        .get(author.as_str())
+                        .unwrap_or(author);
+                    output.push_str(&format!("- {display}\n"));
                 }
             }
 
@@ -158,6 +181,7 @@ fn format_commit_line(output: &mut String, commit: &ConventionalCommit, repo_url
 mod tests {
     use super::*;
     use crate::commit::default_commit_types;
+    use std::collections::HashMap;
 
     fn make_commit(
         type_: &str,
@@ -201,6 +225,7 @@ mod tests {
             commits,
             compare_url: compare_url.map(Into::into),
             repo_url: None,
+            contributor_map: HashMap::new(),
         }
     }
 
@@ -375,5 +400,85 @@ mod tests {
         assert!(out.contains("### Documentation"));
         assert!(out.contains("### Refactoring"));
         assert!(out.contains("### Reverts"));
+    }
+
+    #[test]
+    fn format_contributors_with_github_usernames() {
+        let commits = vec![
+            make_commit_with_author("feat", "add button", None, false, "Alice"),
+            make_commit_with_author("fix", "null check", None, false, "Bob"),
+        ];
+        let mut e = entry(commits, None);
+        e.contributor_map = HashMap::from([
+            ("Alice".into(), "@alice".into()),
+            ("Bob".into(), "@bob".into()),
+        ]);
+        let out = format(&[e]);
+        assert!(out.contains("- @alice"));
+        assert!(out.contains("- @bob"));
+        assert!(!out.contains("- Alice"));
+        assert!(!out.contains("- Bob"));
+    }
+
+    #[test]
+    fn format_contributors_partial_resolution() {
+        let commits = vec![
+            make_commit_with_author("feat", "add button", None, false, "Alice"),
+            make_commit_with_author("fix", "null check", None, false, "Bob"),
+        ];
+        let mut e = entry(commits, None);
+        e.contributor_map = HashMap::from([("Alice".into(), "@alice".into())]);
+        let out = format(&[e]);
+        assert!(out.contains("- @alice"));
+        assert!(out.contains("- Bob"));
+    }
+
+    #[test]
+    fn format_contributors_fallback_no_map() {
+        let commits = vec![
+            make_commit_with_author("feat", "add button", None, false, "Alice"),
+            make_commit_with_author("fix", "null check", None, false, "Bob"),
+        ];
+        let out = format(&[entry(commits, None)]);
+        assert!(out.contains("- Alice"));
+        assert!(out.contains("- Bob"));
+    }
+
+    #[test]
+    fn unique_author_shas_deduplication() {
+        let commits = vec![
+            ConventionalCommit {
+                sha: "aaa1111".into(),
+                r#type: "feat".into(),
+                scope: None,
+                description: "first".into(),
+                body: None,
+                breaking: false,
+                author: Some("Alice".into()),
+            },
+            ConventionalCommit {
+                sha: "bbb2222".into(),
+                r#type: "fix".into(),
+                scope: None,
+                description: "second".into(),
+                body: None,
+                breaking: false,
+                author: Some("Alice".into()),
+            },
+            ConventionalCommit {
+                sha: "ccc3333".into(),
+                r#type: "feat".into(),
+                scope: None,
+                description: "third".into(),
+                body: None,
+                breaking: false,
+                author: Some("Bob".into()),
+            },
+        ];
+        let e = entry(commits, None);
+        let pairs = e.unique_author_shas();
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0], ("Alice", "aaa1111"));
+        assert_eq!(pairs[1], ("Bob", "ccc3333"));
     }
 }
