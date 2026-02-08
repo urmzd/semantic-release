@@ -229,12 +229,18 @@ fn main() -> anyhow::Result<()> {
             let strategy = build_local_strategy(config)?;
             let plan = strategy.plan()?;
 
+            let repo_url = NativeGitRepository::open(Path::new("."))
+                .ok()
+                .and_then(|git| git.parse_remote().ok())
+                .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"));
+
             let today = sr_core::release::today_string();
             let entry = sr_core::changelog::ChangelogEntry {
                 version: plan.next_version.to_string(),
                 date: today,
                 commits: plan.commits.clone(),
                 compare_url: None,
+                repo_url,
             };
             let changelog = sr_core::changelog::ChangelogFormatter::format(&formatter, &[entry])?;
 
@@ -289,6 +295,11 @@ fn main() -> anyhow::Result<()> {
             let strategy = build_local_strategy(config.clone())?;
             let plan = strategy.plan()?;
 
+            let repo_url = NativeGitRepository::open(Path::new("."))
+                .ok()
+                .and_then(|git| git.parse_remote().ok())
+                .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"));
+
             let formatter = DefaultChangelogFormatter::new(
                 config.changelog.template.clone(),
                 config.types.clone(),
@@ -300,6 +311,7 @@ fn main() -> anyhow::Result<()> {
                 date: today,
                 commits: plan.commits,
                 compare_url: None,
+                repo_url,
             };
             let changelog = sr_core::changelog::ChangelogFormatter::format(&formatter, &[entry])?;
 

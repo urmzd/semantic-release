@@ -9,8 +9,27 @@ use crate::commit::{CommitParser, ConventionalCommit, DefaultCommitClassifier};
 use crate::config::ReleaseConfig;
 use crate::error::ReleaseError;
 use crate::git::GitRepository;
-use crate::hooks::{HookCommand, HookRunner};
+use crate::hooks::{HookCommand, HookContext, HookRunner};
 use crate::version::{BumpLevel, apply_bump, determine_bump};
+use crate::version_files::bump_version_file;
+
+/// Build a `HookContext` populated with `SR_*` environment variables from a release plan.
+fn build_hook_context(plan: &ReleasePlan, phase: &str, dry_run: bool) -> HookContext {
+    HookContext::default()
+        .set("SR_VERSION", plan.next_version.to_string())
+        .set(
+            "SR_PREVIOUS_VERSION",
+            plan.current_version
+                .as_ref()
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+        )
+        .set("SR_TAG", &plan.tag_name)
+        .set("SR_BUMP_LEVEL", plan.bump.to_string())
+        .set("SR_DRY_RUN", dry_run.to_string())
+        .set("SR_COMMIT_COUNT", plan.commits.len().to_string())
+        .set("SR_HOOK_PHASE", phase)
+}
 
 /// The computed plan for a release, before execution.
 #[derive(Debug, Serialize)]
@@ -50,6 +69,11 @@ pub trait VcsProvider: Send + Sync {
 
     /// Delete a release by tag.
     fn delete_release(&self, tag: &str) -> Result<(), ReleaseError>;
+
+    /// Return the base URL of the repository (e.g. `https://github.com/owner/repo`).
+    fn repo_url(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Concrete release strategy implementing the trunk-based release flow.
@@ -84,6 +108,7 @@ where
             date: today,
             commits: plan.commits.clone(),
             compare_url: None,
+            repo_url: self.vcs.as_ref().and_then(|v| v.repo_url()),
         };
         self.formatter.format(&[entry])
     }
@@ -138,6 +163,13 @@ where
     fn execute(&self, plan: &ReleasePlan, dry_run: bool) -> Result<(), ReleaseError> {
         if dry_run {
             let changelog_body = self.format_changelog(plan)?;
+            let ctx = build_hook_context(plan, "pre_release", true);
+            let mut env_keys: Vec<&String> = ctx.env.keys().collect();
+            env_keys.sort();
+            eprintln!("[dry-run] Hook environment variables:");
+            for key in env_keys {
+                eprintln!("[dry-run]   {key}={}", ctx.env[key]);
+            }
             eprintln!("[dry-run] Would create tag: {}", plan.tag_name);
             eprintln!("[dry-run] Would push tag: {}", plan.tag_name);
             if self.vcs.is_some() {
@@ -145,6 +177,9 @@ where
                     "[dry-run] Would create GitHub release for {}",
                     plan.tag_name
                 );
+            }
+            for file in &self.config.version_files {
+                eprintln!("[dry-run] Would bump version in: {file}");
             }
             for hook in &self.config.hooks.pre_release {
                 eprintln!("[dry-run] Would run pre-release hook: {hook}");
@@ -159,20 +194,28 @@ where
             return Ok(());
         }
 
+        let failure_ctx = build_hook_context(plan, "on_failure", false);
         let run_failure_hooks = |err: ReleaseError| -> ReleaseError {
             let _ = self
                 .hooks
-                .run(&to_hook_commands(&self.config.hooks.on_failure));
+                .run(&to_hook_commands(&self.config.hooks.on_failure), &failure_ctx);
             err
         };
 
         // 1. Pre-release hooks
+        let pre_ctx = build_hook_context(plan, "pre_release", false);
         self.hooks
-            .run(&to_hook_commands(&self.config.hooks.pre_release))
+            .run(&to_hook_commands(&self.config.hooks.pre_release), &pre_ctx)
             .map_err(&run_failure_hooks)?;
 
         // 2. Format changelog
         let changelog_body = self.format_changelog(plan).map_err(&run_failure_hooks)?;
+
+        // 2.5 Bump version files
+        let version_str = plan.next_version.to_string();
+        for file in &self.config.version_files {
+            bump_version_file(Path::new(file), &version_str).map_err(&run_failure_hooks)?;
+        }
 
         // 3. Write changelog file if configured
         if let Some(ref changelog_file) = self.config.changelog.file {
@@ -199,12 +242,23 @@ where
             fs::write(path, new_content)
                 .map_err(|e| ReleaseError::Changelog(e.to_string()))
                 .map_err(&run_failure_hooks)?;
+        }
 
-            // 4. Stage and commit changelog (skip if nothing to commit)
-            let commit_msg = format!("chore(release): {}", plan.tag_name);
-            self.git
-                .stage_and_commit(&[changelog_file.as_str()], &commit_msg)
-                .map_err(&run_failure_hooks)?;
+        // 4. Stage and commit changelog + version files (skip if nothing to stage)
+        {
+            let mut paths_to_stage: Vec<&str> = Vec::new();
+            if let Some(ref changelog_file) = self.config.changelog.file {
+                paths_to_stage.push(changelog_file.as_str());
+            }
+            for file in &self.config.version_files {
+                paths_to_stage.push(file.as_str());
+            }
+            if !paths_to_stage.is_empty() {
+                let commit_msg = format!("chore(release): {}", plan.tag_name);
+                self.git
+                    .stage_and_commit(&paths_to_stage, &commit_msg)
+                    .map_err(&run_failure_hooks)?;
+            }
         }
 
         // 5. Create tag (skip if it already exists locally)
@@ -233,8 +287,9 @@ where
         }
 
         // 8. Post-tag hooks
+        let post_tag_ctx = build_hook_context(plan, "post_tag", false);
         self.hooks
-            .run(&to_hook_commands(&self.config.hooks.post_tag))
+            .run(&to_hook_commands(&self.config.hooks.post_tag), &post_tag_ctx)
             .map_err(&run_failure_hooks)?;
 
         // 9. Create GitHub release (skip if exists, or update it)
@@ -253,8 +308,9 @@ where
         }
 
         // 10. Post-release hooks
+        let post_release_ctx = build_hook_context(plan, "post_release", false);
         self.hooks
-            .run(&to_hook_commands(&self.config.hooks.post_release))
+            .run(&to_hook_commands(&self.config.hooks.post_release), &post_release_ctx)
             .map_err(&run_failure_hooks)?;
 
         eprintln!("Released {}", plan.tag_name);
@@ -287,7 +343,7 @@ mod tests {
     use crate::commit::{Commit, DefaultCommitParser};
     use crate::config::ReleaseConfig;
     use crate::git::{GitRepository, TagInfo};
-    use crate::hooks::{HookCommand, HookRunner};
+    use crate::hooks::{HookCommand, HookContext, HookRunner};
 
     // --- Fakes ---
 
@@ -400,24 +456,33 @@ mod tests {
             self.releases.lock().unwrap().retain(|(t, _)| t != tag);
             Ok(())
         }
+
+        fn repo_url(&self) -> Option<String> {
+            Some("https://github.com/test/repo".into())
+        }
     }
 
     struct FakeHooks {
         run_log: Mutex<Vec<String>>,
+        ctx_log: Mutex<Vec<HookContext>>,
     }
 
     impl FakeHooks {
         fn new() -> Self {
             Self {
                 run_log: Mutex::new(Vec::new()),
+                ctx_log: Mutex::new(Vec::new()),
             }
         }
     }
 
     impl HookRunner for FakeHooks {
-        fn run(&self, hooks: &[HookCommand]) -> Result<(), ReleaseError> {
+        fn run(&self, hooks: &[HookCommand], ctx: &HookContext) -> Result<(), ReleaseError> {
             for h in hooks {
                 self.run_log.lock().unwrap().push(h.command.clone());
+            }
+            if !hooks.is_empty() {
+                self.ctx_log.lock().unwrap().push(ctx.clone());
             }
             Ok(())
         }
@@ -686,5 +751,124 @@ mod tests {
         // One entry: delete removed the first, create added a replacement
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].0, "v0.1.0");
+    }
+
+    #[test]
+    fn execute_passes_hook_context_with_version_info() {
+        let tag = TagInfo {
+            name: "v1.2.3".into(),
+            version: Version::new(1, 2, 3),
+            sha: "b".repeat(40),
+        };
+        let mut config = ReleaseConfig::default();
+        config.hooks.pre_release = vec!["echo pre".into()];
+        config.hooks.post_tag = vec!["echo post-tag".into()];
+        config.hooks.post_release = vec!["echo post-release".into()];
+
+        let s = make_strategy(
+            vec![tag],
+            vec![
+                raw_commit("feat: first"),
+                raw_commit("fix: second"),
+            ],
+            config,
+        );
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        let ctx_log = s.hooks.ctx_log.lock().unwrap();
+        assert_eq!(ctx_log.len(), 3);
+
+        // pre_release context
+        let pre = &ctx_log[0];
+        assert_eq!(pre.env.get("SR_VERSION").unwrap(), "1.3.0");
+        assert_eq!(pre.env.get("SR_PREVIOUS_VERSION").unwrap(), "1.2.3");
+        assert_eq!(pre.env.get("SR_TAG").unwrap(), "v1.3.0");
+        assert_eq!(pre.env.get("SR_BUMP_LEVEL").unwrap(), "minor");
+        assert_eq!(pre.env.get("SR_DRY_RUN").unwrap(), "false");
+        assert_eq!(pre.env.get("SR_COMMIT_COUNT").unwrap(), "2");
+        assert_eq!(pre.env.get("SR_HOOK_PHASE").unwrap(), "pre_release");
+
+        // post_tag context
+        let post_tag = &ctx_log[1];
+        assert_eq!(post_tag.env.get("SR_HOOK_PHASE").unwrap(), "post_tag");
+        assert_eq!(post_tag.env.get("SR_VERSION").unwrap(), "1.3.0");
+
+        // post_release context
+        let post_release = &ctx_log[2];
+        assert_eq!(post_release.env.get("SR_HOOK_PHASE").unwrap(), "post_release");
+        assert_eq!(post_release.env.get("SR_VERSION").unwrap(), "1.3.0");
+    }
+
+    #[test]
+    fn hook_context_first_release_has_empty_previous_version() {
+        let mut config = ReleaseConfig::default();
+        config.hooks.pre_release = vec!["echo pre".into()];
+
+        let s = make_strategy(
+            vec![],
+            vec![raw_commit("feat: initial")],
+            config,
+        );
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        let ctx_log = s.hooks.ctx_log.lock().unwrap();
+        assert!(!ctx_log.is_empty());
+        let pre = &ctx_log[0];
+        assert_eq!(pre.env.get("SR_PREVIOUS_VERSION").unwrap(), "");
+        assert_eq!(pre.env.get("SR_VERSION").unwrap(), "0.1.0");
+    }
+
+    #[test]
+    fn execute_bumps_version_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let cargo_path = dir.path().join("Cargo.toml");
+        std::fs::write(
+            &cargo_path,
+            "[package]\nname = \"test\"\nversion = \"0.0.0\"\n",
+        )
+        .unwrap();
+
+        let mut config = ReleaseConfig::default();
+        config.version_files = vec![cargo_path.to_str().unwrap().to_string()];
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        // Verify the file was bumped
+        let contents = std::fs::read_to_string(&cargo_path).unwrap();
+        assert!(contents.contains("version = \"0.1.0\""));
+
+        // Verify it was staged alongside the commit
+        let committed = s.git.committed.lock().unwrap();
+        assert_eq!(committed.len(), 1);
+        assert!(committed[0].0.contains(&cargo_path.to_str().unwrap().to_string()));
+    }
+
+    #[test]
+    fn execute_stages_changelog_and_version_files_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let cargo_path = dir.path().join("Cargo.toml");
+        std::fs::write(
+            &cargo_path,
+            "[package]\nname = \"test\"\nversion = \"0.0.0\"\n",
+        )
+        .unwrap();
+
+        let mut config = ReleaseConfig::default();
+        config.changelog.file = Some("CHANGELOG.md".into());
+        config.version_files = vec![cargo_path.to_str().unwrap().to_string()];
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        // Both changelog and version file should be staged in a single commit
+        let committed = s.git.committed.lock().unwrap();
+        assert_eq!(committed.len(), 1);
+        assert!(committed[0].0.contains(&"CHANGELOG.md".to_string()));
+        assert!(committed[0].0.contains(&cargo_path.to_str().unwrap().to_string()));
     }
 }

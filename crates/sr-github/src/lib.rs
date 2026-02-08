@@ -65,6 +65,10 @@ impl VcsProvider for GitHubProvider {
         Ok(output.status.success())
     }
 
+    fn repo_url(&self) -> Option<String> {
+        Some(format!("https://github.com/{}/{}", self.owner, self.repo))
+    }
+
     fn delete_release(&self, tag: &str) -> Result<(), ReleaseError> {
         let repo_slug = format!("{}/{}", self.owner, self.repo);
         let output = Command::new("gh")

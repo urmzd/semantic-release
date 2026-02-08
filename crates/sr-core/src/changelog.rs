@@ -10,6 +10,7 @@ pub struct ChangelogEntry {
     pub date: String,
     pub commits: Vec<ConventionalCommit>,
     pub compare_url: Option<String>,
+    pub repo_url: Option<String>,
 }
 
 /// Formats changelog entries into a string representation.
@@ -68,7 +69,7 @@ impl ChangelogFormatter for DefaultChangelogFormatter {
                 if !commits_in_section.is_empty() {
                     output.push_str(&format!("\n### {section_name}\n\n"));
                     for commit in &commits_in_section {
-                        format_commit_line(&mut output, commit);
+                        format_commit_line(&mut output, commit, entry.repo_url.as_deref());
                     }
                 }
             }
@@ -78,7 +79,7 @@ impl ChangelogFormatter for DefaultChangelogFormatter {
             if !breaking.is_empty() {
                 output.push_str(&format!("\n### {}\n\n", self.breaking_section));
                 for commit in &breaking {
-                    format_commit_line(&mut output, commit);
+                    format_commit_line(&mut output, commit, entry.repo_url.as_deref());
                 }
             }
 
@@ -93,15 +94,19 @@ impl ChangelogFormatter for DefaultChangelogFormatter {
     }
 }
 
-fn format_commit_line(output: &mut String, commit: &ConventionalCommit) {
+fn format_commit_line(output: &mut String, commit: &ConventionalCommit, repo_url: Option<&str>) {
     let short_sha = &commit.sha[..7.min(commit.sha.len())];
+    let sha_display = match repo_url {
+        Some(url) => format!("[{short_sha}]({url}/commit/{})", commit.sha),
+        None => short_sha.to_string(),
+    };
     if let Some(scope) = &commit.scope {
         output.push_str(&format!(
-            "- **{scope}**: {} ({short_sha})\n",
+            "- **{scope}**: {} ({sha_display})\n",
             commit.description
         ));
     } else {
-        output.push_str(&format!("- {} ({short_sha})\n", commit.description));
+        output.push_str(&format!("- {} ({sha_display})\n", commit.description));
     }
 }
 
@@ -132,6 +137,7 @@ mod tests {
             date: "2025-01-01".into(),
             commits,
             compare_url: compare_url.map(Into::into),
+            repo_url: None,
         }
     }
 
@@ -208,5 +214,16 @@ mod tests {
         assert!(!out.contains("### Features"));
         assert!(!out.contains("### Bug Fixes"));
         assert!(!out.contains("### Breaking Changes"));
+    }
+
+    #[test]
+    fn format_with_commit_links() {
+        let mut e = entry(
+            vec![make_commit("feat", "add button", None, false)],
+            None,
+        );
+        e.repo_url = Some("https://github.com/o/r".into());
+        let out = format(&[e]);
+        assert!(out.contains("[abc1234](https://github.com/o/r/commit/abc1234def5678)"));
     }
 }

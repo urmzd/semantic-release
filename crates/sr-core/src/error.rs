@@ -23,6 +23,9 @@ pub enum ReleaseError {
     #[error("changelog error: {0}")]
     Changelog(String),
 
+    #[error("version file error: {0}")]
+    VersionBump(String),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

@@ -16,6 +16,7 @@ pub struct ReleaseConfig {
     pub types: Vec<CommitType>,
     pub changelog: ChangelogConfig,
     pub hooks: HooksConfig,
+    pub version_files: Vec<String>,
 }
 
 impl Default for ReleaseConfig {
@@ -28,6 +29,7 @@ impl Default for ReleaseConfig {
             types: default_commit_types(),
             changelog: ChangelogConfig::default(),
             hooks: HooksConfig::default(),
+            version_files: vec![],
         }
     }
 }

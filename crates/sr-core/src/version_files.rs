@@ -1,0 +1,240 @@
+use std::fs;
+use std::path::Path;
+
+use crate::error::ReleaseError;
+
+/// Bump the `version` field in the given manifest file.
+///
+/// The file format is auto-detected from the filename:
+/// - `Cargo.toml`      → TOML (`package.version` or `workspace.package.version`)
+/// - `package.json`    → JSON (`.version`)
+/// - `pyproject.toml`  → TOML (`project.version` or `tool.poetry.version`)
+pub fn bump_version_file(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+
+    match filename {
+        "Cargo.toml" => bump_cargo_toml(path, new_version),
+        "package.json" => bump_package_json(path, new_version),
+        "pyproject.toml" => bump_pyproject_toml(path, new_version),
+        other => Err(ReleaseError::VersionBump(format!(
+            "unsupported version file: {other}"
+        ))),
+    }
+}
+
+fn bump_cargo_toml(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
+    let contents = read_file(path)?;
+    let mut doc: toml_edit::DocumentMut = contents
+        .parse()
+        .map_err(|e| ReleaseError::VersionBump(format!("failed to parse {}: {e}", path.display())))?;
+
+    if doc
+        .get("package")
+        .and_then(|p| p.get("version"))
+        .is_some()
+    {
+        doc["package"]["version"] = toml_edit::value(new_version);
+    } else if doc
+        .get("workspace")
+        .and_then(|w| w.get("package"))
+        .and_then(|p| p.get("version"))
+        .is_some()
+    {
+        doc["workspace"]["package"]["version"] = toml_edit::value(new_version);
+    } else {
+        return Err(ReleaseError::VersionBump(format!(
+            "no version field found in {}",
+            path.display()
+        )));
+    }
+
+    write_file(path, &doc.to_string())
+}
+
+fn bump_package_json(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
+    let contents = read_file(path)?;
+    let mut value: serde_json::Value = serde_json::from_str(&contents)
+        .map_err(|e| ReleaseError::VersionBump(format!("failed to parse {}: {e}", path.display())))?;
+
+    value
+        .as_object_mut()
+        .ok_or_else(|| ReleaseError::VersionBump("package.json is not an object".into()))?
+        .insert("version".into(), serde_json::Value::String(new_version.into()));
+
+    let output = serde_json::to_string_pretty(&value)
+        .map_err(|e| ReleaseError::VersionBump(format!("failed to serialize {}: {e}", path.display())))?;
+
+    write_file(path, &format!("{output}\n"))
+}
+
+fn bump_pyproject_toml(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
+    let contents = read_file(path)?;
+    let mut doc: toml_edit::DocumentMut = contents
+        .parse()
+        .map_err(|e| ReleaseError::VersionBump(format!("failed to parse {}: {e}", path.display())))?;
+
+    if doc
+        .get("project")
+        .and_then(|p| p.get("version"))
+        .is_some()
+    {
+        doc["project"]["version"] = toml_edit::value(new_version);
+    } else if doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("version"))
+        .is_some()
+    {
+        doc["tool"]["poetry"]["version"] = toml_edit::value(new_version);
+    } else {
+        return Err(ReleaseError::VersionBump(format!(
+            "no version field found in {}",
+            path.display()
+        )));
+    }
+
+    write_file(path, &doc.to_string())
+}
+
+fn read_file(path: &Path) -> Result<String, ReleaseError> {
+    fs::read_to_string(path)
+        .map_err(|e| ReleaseError::VersionBump(format!("failed to read {}: {e}", path.display())))
+}
+
+fn write_file(path: &Path, contents: &str) -> Result<(), ReleaseError> {
+    fs::write(path, contents)
+        .map_err(|e| ReleaseError::VersionBump(format!("failed to write {}: {e}", path.display())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bump_cargo_toml_package_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Cargo.toml");
+        fs::write(
+            &path,
+            r#"[package]
+name = "my-crate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1"
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "1.2.3").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("version = \"1.2.3\""));
+        assert!(contents.contains("name = \"my-crate\""));
+        assert!(contents.contains("serde = \"1\""));
+    }
+
+    #[test]
+    fn bump_cargo_toml_workspace_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Cargo.toml");
+        fs::write(
+            &path,
+            r#"[workspace]
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "2.0.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("version = \"2.0.0\""));
+        assert!(contents.contains("members = [\"crates/*\"]"));
+    }
+
+    #[test]
+    fn bump_package_json_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+  "name": "my-pkg",
+  "version": "0.0.0",
+  "description": "test"
+}"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "3.1.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&contents).unwrap();
+        assert_eq!(value["version"], "3.1.0");
+        assert_eq!(value["name"], "my-pkg");
+        assert_eq!(value["description"], "test");
+        assert!(contents.ends_with('\n'));
+    }
+
+    #[test]
+    fn bump_pyproject_toml_project_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pyproject.toml");
+        fs::write(
+            &path,
+            r#"[project]
+name = "my-project"
+version = "0.1.0"
+description = "A test project"
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "1.0.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("version = \"1.0.0\""));
+        assert!(contents.contains("name = \"my-project\""));
+    }
+
+    #[test]
+    fn bump_pyproject_toml_poetry_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pyproject.toml");
+        fs::write(
+            &path,
+            r#"[tool.poetry]
+name = "my-poetry-project"
+version = "0.2.0"
+description = "A poetry project"
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "0.3.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("version = \"0.3.0\""));
+        assert!(contents.contains("name = \"my-poetry-project\""));
+    }
+
+    #[test]
+    fn bump_unknown_file_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unknown.txt");
+        fs::write(&path, "version = 1").unwrap();
+
+        let err = bump_version_file(&path, "1.0.0").unwrap_err();
+        assert!(matches!(err, ReleaseError::VersionBump(_)));
+        assert!(err.to_string().contains("unsupported"));
+    }
+}

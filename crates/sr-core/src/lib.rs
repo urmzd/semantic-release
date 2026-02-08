@@ -6,3 +6,4 @@ pub mod git;
 pub mod hooks;
 pub mod release;
 pub mod version;
+pub mod version_files;
