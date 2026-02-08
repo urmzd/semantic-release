@@ -142,10 +142,7 @@ impl ChangelogFormatter for DefaultChangelogFormatter {
             if !authors.is_empty() {
                 output.push_str("\n### Contributors\n\n");
                 for author in &authors {
-                    let display = entry
-                        .contributor_map
-                        .get(author.as_str())
-                        .unwrap_or(author);
+                    let display = entry.contributor_map.get(author.as_str()).unwrap_or(author);
                     output.push_str(&format!("- {display}\n"));
                 }
             }
