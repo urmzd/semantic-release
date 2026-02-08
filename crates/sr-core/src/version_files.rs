@@ -49,6 +49,21 @@ fn bump_cargo_toml(path: &Path, new_version: &str) -> Result<(), ReleaseError> {
         .is_some()
     {
         doc["workspace"]["package"]["version"] = toml_edit::value(new_version);
+
+        // Also update [workspace.dependencies] entries that are internal path deps
+        if let Some(deps) = doc
+            .get_mut("workspace")
+            .and_then(|w| w.get_mut("dependencies"))
+            .and_then(|d| d.as_table_like_mut())
+        {
+            for (_, dep) in deps.iter_mut() {
+                if let Some(tbl) = dep.as_table_like_mut() {
+                    if tbl.get("path").is_some() && tbl.get("version").is_some() {
+                        tbl.insert("version", toml_edit::value(new_version));
+                    }
+                }
+            }
+        }
     } else {
         return Err(ReleaseError::VersionBump(format!(
             "no version field found in {}",
@@ -410,6 +425,61 @@ dependencies {
         // Verify there are exactly two <version> tags with expected values
         let version_count: Vec<&str> = contents.matches("<version>").collect();
         assert_eq!(version_count.len(), 2);
+    }
+
+    #[test]
+    fn bump_cargo_toml_workspace_dependencies_with_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Cargo.toml");
+        fs::write(
+            &path,
+            r#"[workspace]
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+# Internal crates
+sr-core = { path = "crates/sr-core", version = "0.1.0" }
+sr-git = { path = "crates/sr-git", version = "0.1.0" }
+# External dep should not change
+serde = { version = "1", features = ["derive"] }
+"#,
+        )
+        .unwrap();
+
+        bump_version_file(&path, "2.0.0").unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        let doc: toml_edit::DocumentMut = contents.parse().unwrap();
+
+        // workspace.package.version should be bumped
+        assert_eq!(
+            doc["workspace"]["package"]["version"].as_str().unwrap(),
+            "2.0.0"
+        );
+        // Internal path deps should have their version bumped
+        assert_eq!(
+            doc["workspace"]["dependencies"]["sr-core"]["version"]
+                .as_str()
+                .unwrap(),
+            "2.0.0"
+        );
+        assert_eq!(
+            doc["workspace"]["dependencies"]["sr-git"]["version"]
+                .as_str()
+                .unwrap(),
+            "2.0.0"
+        );
+        // External dep version must NOT change
+        assert_eq!(
+            doc["workspace"]["dependencies"]["serde"]["version"]
+                .as_str()
+                .unwrap(),
+            "1"
+        );
     }
 
     #[test]
