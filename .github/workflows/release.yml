@@ -23,10 +23,10 @@ jobs:
             runner: ubuntu-latest
             cross: true
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-15-intel
             cross: false
           - target: aarch64-apple-darwin
-            runner: macos-latest
+            runner: macos-15
             cross: false
     steps:
       - uses: actions/checkout@v4
@@ -81,19 +81,23 @@ jobs:
           path: artifacts
 
       - name: Run sr release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./target/release/sr release
-
-      - name: Upload binaries to release
+        id: sr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$TAG" ]; then
-            echo "No tag found — skipping binary upload"
-            exit 0
+          if ./target/release/sr release; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sr release exited non-zero — no bump needed or error occurred"
+            echo "released=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Upload binaries to release
+        if: steps.sr.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
 
           for dir in artifacts/sr-*/; do
             TARGET=$(basename "$dir")

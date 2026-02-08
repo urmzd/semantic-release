@@ -4,6 +4,7 @@
 
 - [Rust](https://www.rust-lang.org/tools/install) (stable)
 - [just](https://github.com/casey/just) (task runner)
+- [GitHub CLI (`gh`)](https://cli.github.com/) (for release testing)
 - Git
 
 ## Getting Started
@@ -94,9 +95,9 @@ Other types (`chore`, `docs`, `ci`, `refactor`, `test`, `build`, `style`, `rever
 crates/
   sr-core/     Pure domain logic — traits, config, versioning, changelog, hooks
   sr-git/      Git implementation (native git CLI)
-  sr-github/   GitHub VCS provider (octocrab)
+  sr-github/   GitHub VCS provider (gh CLI)
   sr-cli/      CLI binary (clap) — wires everything together
-action/        GitHub Action composite wrapper
+action.yml     GitHub Action composite wrapper (repo root)
 ```
 
 ### Core Traits

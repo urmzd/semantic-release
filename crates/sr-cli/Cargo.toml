@@ -16,6 +16,5 @@ sr-git = { workspace = true }
 sr-github = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
-tokio = { workspace = true }
 serde_yaml_ng = { workspace = true }
 serde_json = { workspace = true }

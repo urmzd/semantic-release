@@ -26,14 +26,8 @@ semver = { version = "1", features = ["serde"] }
 # Templating
 minijinja = "2"
 
-# GitHub API
-octocrab = "0.44"
-
 # CLI
 clap = { version = "4", features = ["derive"] }
-
-# Async
-tokio = { version = "1", features = ["full"] }
 
 # Serialization (JSON)
 serde_json = "1"

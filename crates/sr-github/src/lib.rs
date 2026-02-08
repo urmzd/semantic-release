@@ -1,25 +1,17 @@
+use std::process::Command;
+
 use sr_core::error::ReleaseError;
 use sr_core::release::VcsProvider;
 
-/// GitHub implementation of the VcsProvider trait.
+/// GitHub implementation of the VcsProvider trait using the `gh` CLI.
 pub struct GitHubProvider {
-    client: octocrab::Octocrab,
     owner: String,
     repo: String,
 }
 
 impl GitHubProvider {
-    pub fn new(token: &str, owner: String, repo: String) -> Result<Self, ReleaseError> {
-        let client = octocrab::Octocrab::builder()
-            .personal_token(token.to_string())
-            .build()
-            .map_err(|e| ReleaseError::Vcs(e.to_string()))?;
-
-        Ok(Self {
-            client,
-            owner,
-            repo,
-        })
+    pub fn new(owner: String, repo: String) -> Self {
+        Self { owner, repo }
     }
 }
 
@@ -31,24 +23,36 @@ impl VcsProvider for GitHubProvider {
         body: &str,
         prerelease: bool,
     ) -> Result<String, ReleaseError> {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| ReleaseError::Vcs(format!("failed to create tokio runtime: {e}")))?;
+        let repo_slug = format!("{}/{}", self.owner, self.repo);
 
-        let release = rt
-            .block_on(async {
-                self.client
-                    .repos(&self.owner, &self.repo)
-                    .releases()
-                    .create(tag)
-                    .name(name)
-                    .body(body)
-                    .prerelease(prerelease)
-                    .send()
-                    .await
-            })
-            .map_err(|e| ReleaseError::Vcs(e.to_string()))?;
+        let mut args = vec![
+            "release",
+            "create",
+            tag,
+            "--repo",
+            &repo_slug,
+            "--title",
+            name,
+            "--notes",
+            body,
+        ];
 
-        Ok(release.html_url.to_string())
+        if prerelease {
+            args.push("--prerelease");
+        }
+
+        let output = Command::new("gh")
+            .args(&args)
+            .output()
+            .map_err(|e| ReleaseError::Vcs(format!("failed to run gh: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ReleaseError::Vcs(format!("gh release create failed: {stderr}")));
+        }
+
+        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(url)
     }
 
     fn compare_url(&self, base: &str, head: &str) -> Result<String, ReleaseError> {

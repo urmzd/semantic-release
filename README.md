@@ -14,7 +14,7 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 
 **sr** solves this:
 
-- **Single static binary** — no runtime, no package manager, no transitive dependencies.
+- **Single static binary** — no runtime, no package manager, minimal dependencies.
 - **Language-agnostic** — works with any project that uses git tags for versioning.
 - **Zero-config defaults** — conventional commits + semver + GitHub releases out of the box.
 - **Lifecycle hooks** — run arbitrary shell commands at each phase instead of installing plugins.
@@ -24,7 +24,7 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 - Conventional Commits parsing (via `git-conventional`)
 - Semantic versioning bumps (major / minor / patch)
 - Changelog generation (Jinja2 templates via `minijinja`)
-- GitHub Releases (via `octocrab`)
+- GitHub Releases (via `gh` CLI)
 - Lifecycle hooks (`pre_release`, `post_tag`, `post_release`, `on_failure`)
 - Trunk-based workflow (tag + release from `main`)
 
@@ -33,7 +33,7 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 ### GitHub Action (recommended)
 
 ```yaml
-- uses: urmzd/semantic-release/action@v1
+- uses: urmzd/semantic-release@v1
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -59,6 +59,16 @@ chmod +x sr-* && mv sr-* /usr/local/bin/sr
 ```bash
 cargo install --path crates/sr-cli
 ```
+
+## Prerequisites
+
+`sr release` uses the [GitHub CLI (`gh`)](https://cli.github.com/) to create GitHub releases. It is pre-installed on all GitHub Actions runners. For local usage, install `gh` and authenticate:
+
+```bash
+gh auth login
+```
+
+The `gh` CLI reads the `GH_TOKEN` environment variable for authentication. The GitHub Action sets this automatically.
 
 ## Quick Start
 
@@ -142,9 +152,9 @@ All other types (e.g. `chore`, `docs`, `ci`) do not trigger a release unless ove
 crates/
   sr-core/     Pure domain logic — traits, config, versioning, changelog, hooks
   sr-git/      Git implementation (native git CLI)
-  sr-github/   GitHub VCS provider (octocrab)
+  sr-github/   GitHub VCS provider (gh CLI)
   sr-cli/      CLI binary (clap) — wires everything together
-action/        GitHub Action composite wrapper
+action.yml     GitHub Action composite wrapper (repo root)
 ```
 
 ### Core traits

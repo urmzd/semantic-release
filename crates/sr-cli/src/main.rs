@@ -132,10 +132,7 @@ fn build_full_strategy(
     let git = NativeGitRepository::open(Path::new("."))?;
     let (owner, repo) = git.parse_remote()?;
 
-    let token = std::env::var("GITHUB_TOKEN")
-        .map_err(|_| anyhow::anyhow!("GITHUB_TOKEN environment variable is not set"))?;
-
-    let vcs = GitHubProvider::new(&token, owner, repo)?;
+    let vcs = GitHubProvider::new(owner, repo);
     let types = config.types.clone();
     let breaking_section = config.breaking_section.clone();
     let formatter =

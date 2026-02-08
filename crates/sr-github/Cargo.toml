@@ -8,5 +8,3 @@ description = "GitHub VCS provider for semantic-release"
 
 [dependencies]
 sr-core = { workspace = true }
-octocrab = { workspace = true }
-tokio = { workspace = true }
