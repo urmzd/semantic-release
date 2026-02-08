@@ -1,5 +1,10 @@
 name: "Semantic Release"
-description: "Automated semantic versioning and release management"
+author: "urmzd"
+description: "Automated semantic versioning and release management — single binary, zero-config, language-agnostic."
+
+branding:
+  icon: "upload-cloud"
+  color: "green"
 
 inputs:
   command:

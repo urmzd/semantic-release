@@ -38,6 +38,62 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
     github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+### Usage
+
+Minimal — release on every push to `main`:
+
+```yaml
+name: Release
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: urmzd/semantic-release@v1
+```
+
+Dry-run on pull requests:
+
+```yaml
+      - uses: urmzd/semantic-release@v1
+        with:
+          command: release
+          dry-run: "true"
+```
+
+Use outputs in subsequent steps:
+
+```yaml
+      - uses: urmzd/semantic-release@v1
+        id: sr
+      - if: steps.sr.outputs.released == 'true'
+        run: echo "Released ${{ steps.sr.outputs.version }}"
+```
+
+#### Inputs
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `command` | The `sr` subcommand to run (`release`, `plan`, `changelog`, `version`, `config`) | `release` |
+| `dry-run` | Preview changes without executing them | `false` |
+| `config` | Path to the config file | `.urmzd.sr.yml` |
+| `github-token` | GitHub token for creating releases | `${{ github.token }}` |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `version` | The released version (empty if no release) |
+| `released` | Whether a release was created (`true`/`false`) |
+
 ### Binary download
 
 Download the latest release for your platform from
