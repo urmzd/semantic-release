@@ -31,6 +31,13 @@ types:
   - name: build
   - name: style
 
+version_files:
+  - crates/sr-core/Cargo.toml
+  - crates/sr-git/Cargo.toml
+  - crates/sr-github/Cargo.toml
+  - crates/sr-cli/Cargo.toml
+  - Cargo.toml
+
 changelog:
   file: CHANGELOG.md
 

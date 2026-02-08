@@ -4,7 +4,12 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
+homepage.workspace = true
 description = "GitHub VCS provider for semantic-release"
+readme = "README.md"
+keywords = ["semantic-release", "github", "release"]
+categories = ["development-tools"]
 
 [dependencies]
 sr-core = { workspace = true }

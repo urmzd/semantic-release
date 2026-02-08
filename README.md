@@ -34,7 +34,7 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 ### GitHub Action (recommended)
 
 ```yaml
-- uses: urmzd/semantic-release@v1
+- uses: urmzd/semantic-release@v0
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -58,13 +58,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: urmzd/semantic-release@v1
+      - uses: urmzd/semantic-release@v0
 ```
 
 Dry-run on pull requests:
 
 ```yaml
-      - uses: urmzd/semantic-release@v1
+      - uses: urmzd/semantic-release@v0
         with:
           command: release
           dry-run: "true"
@@ -73,7 +73,7 @@ Dry-run on pull requests:
 Use outputs in subsequent steps:
 
 ```yaml
-      - uses: urmzd/semantic-release@v1
+      - uses: urmzd/semantic-release@v0
         id: sr
       - if: steps.sr.outputs.released == 'true'
         run: echo "Released ${{ steps.sr.outputs.version }}"
@@ -169,7 +169,7 @@ git config core.hooksPath .githooks/
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/urmzd/semantic-release
-    rev: v0.2.0
+    rev: v0.5.0
     hooks:
       - id: conventional-commit-msg
 ```
@@ -274,14 +274,14 @@ All other types (e.g. `chore`, `docs`, `ci`) do not trigger a release unless ove
 
 ## Architecture
 
-```
-crates/
-  sr-core/     Pure domain logic — traits, config, versioning, changelog, hooks
-  sr-git/      Git implementation (native git CLI)
-  sr-github/   GitHub VCS provider (gh CLI)
-  sr-cli/      CLI binary (clap) — wires everything together
-action.yml     GitHub Action composite wrapper (repo root)
-```
+| Crate | Description |
+|-------|-------------|
+| [`sr-core`](crates/sr-core/) | Pure domain logic — traits, config, versioning, changelog, hooks |
+| [`sr-git`](crates/sr-git/) | Git implementation (native `git` CLI) |
+| [`sr-github`](crates/sr-github/) | GitHub VCS provider (`gh` CLI) |
+| [`sr-cli`](crates/sr-cli/) | CLI binary (`clap`) — wires everything together |
+
+`action.yml` in the repo root is the GitHub Action composite wrapper.
 
 ### Core traits
 

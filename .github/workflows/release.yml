@@ -94,12 +94,21 @@ jobs:
           echo "$OUTPUT"
           if [ $RC -eq 0 ]; then
             echo "released=true" >> "$GITHUB_OUTPUT"
+            TAG=$(git describe --tags --abbrev=0)
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           elif echo "$OUTPUT" | grep -q "no releasable commits"; then
             echo "No releasable commits — skipping release"
             echo "released=false" >> "$GITHUB_OUTPUT"
           else
             exit $RC
           fi
+
+      - name: Update floating major version tag
+        if: steps.sr.outputs.released == 'true'
+        run: |
+          MAJOR=$(echo "${{ steps.sr.outputs.version }}" | cut -d. -f1)
+          git tag -f "v${MAJOR}" HEAD
+          git push origin "v${MAJOR}" --force
 
       - name: Upload binaries to release
         if: steps.sr.outputs.released == 'true'
@@ -114,3 +123,15 @@ jobs:
             chmod +x "$TARGET"
             gh release upload "$TAG" "$TARGET" --clobber
           done
+
+      - name: Publish to crates.io
+        if: steps.sr.outputs.released == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          cargo publish -p sr-core --allow-dirty
+          sleep 30
+          cargo publish -p sr-git --allow-dirty
+          cargo publish -p sr-github --allow-dirty
+          sleep 30
+          cargo publish -p sr-cli --allow-dirty

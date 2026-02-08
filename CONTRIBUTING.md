@@ -47,7 +47,7 @@ If you use the [pre-commit](https://pre-commit.com/) framework, add to your `.pr
 ```yaml
 repos:
   - repo: https://github.com/urmzd/semantic-release
-    rev: v0.1.0
+    rev: v0.5.0
     hooks:
       - id: conventional-commit-msg
 ```
