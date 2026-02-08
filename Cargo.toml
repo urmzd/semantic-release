@@ -17,8 +17,8 @@ sr-github = { path = "crates/sr-github" }
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
-# Git
-git-conventional = "0.12"
+# Regex
+regex = "1"
 
 # Versioning
 semver = { version = "1", features = ["serde"] }
@@ -30,8 +30,9 @@ minijinja = "2"
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 
-# Serialization (JSON)
+# Serialization (JSON / TOML editing)
 serde_json = "1"
+toml_edit = "0.22"
 
 # Error handling
 thiserror = "2"

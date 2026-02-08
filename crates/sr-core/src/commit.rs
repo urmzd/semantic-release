@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ReleaseError;
@@ -155,21 +156,36 @@ pub trait CommitParser: Send + Sync {
     fn parse(&self, commit: &Commit) -> Result<ConventionalCommit, ReleaseError>;
 }
 
-/// Default parser backed by `git-conventional`.
+/// Default parser using the built-in `DEFAULT_COMMIT_PATTERN` regex.
 pub struct DefaultCommitParser;
 
 impl CommitParser for DefaultCommitParser {
     fn parse(&self, commit: &Commit) -> Result<ConventionalCommit, ReleaseError> {
-        let parsed = git_conventional::Commit::parse(&commit.message)
+        let re = Regex::new(DEFAULT_COMMIT_PATTERN)
             .map_err(|e| ReleaseError::Config(e.to_string()))?;
+
+        let caps = re
+            .captures(&commit.message)
+            .ok_or_else(|| ReleaseError::Config(format!("not a conventional commit: {}", commit.message)))?;
+
+        let r#type = caps.name("type").unwrap().as_str().to_string();
+        let scope = caps.name("scope").map(|m| m.as_str().to_string());
+        let breaking = caps.name("breaking").is_some();
+        let description = caps.name("description").unwrap().as_str().to_string();
+
+        let body = commit
+            .message
+            .splitn(2, "\n\n")
+            .nth(1)
+            .map(|b| b.to_string());
 
         Ok(ConventionalCommit {
             sha: commit.sha.clone(),
-            r#type: parsed.type_().to_string(),
-            scope: parsed.scope().map(|s| s.to_string()),
-            description: parsed.description().to_string(),
-            body: parsed.body().map(|b| b.to_string()),
-            breaking: parsed.breaking(),
+            r#type,
+            scope,
+            description,
+            body,
+            breaking,
         })
     }
 }
