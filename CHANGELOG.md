@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0 (2026-02-08)
+
+### Features
+
+- tag contributors with GitHub @username in changelog ([bc13a08](https://github.com/urmzd/semantic-release/commit/bc13a08f8e43eafa9526dbb0607cee9efb3f81b9))
+
+### Documentation
+
+- regenerate changelog with GitHub @username contributors ([1d2906a](https://github.com/urmzd/semantic-release/commit/1d2906a7f71f53c1eb72865bd5cf0c14afbf49aa))
+
+### Miscellaneous
+
+- fix formatting in changelog contributor rendering ([2276d07](https://github.com/urmzd/semantic-release/commit/2276d07facda43f6ab56c32228e47db16f7f7634))
+
+### Contributors
+
+- @urmzd
+
+
 ## 0.5.0 (2026-02-08)
 
 ### Features
