@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0 (2026-02-09)
+
+### Features
+
+- add floating major version tags support ([ece1331](https://github.com/urmzd/semantic-release/commit/ece133156582e5fd13a36027e630a524fe2cfa91))
+
+### Contributors
+
+- @urmzd
+
+
 ## 0.8.0 (2026-02-08)
 
 ### Features
