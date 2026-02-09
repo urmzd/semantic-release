@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::Path;
 
 use clap::{CommandFactory, Parser, Subcommand};
@@ -181,14 +180,6 @@ fn build_full_strategy(
     })
 }
 
-/// Best-effort construction of a GitHubProvider for contributor resolution.
-/// Returns None if the git remote can't be parsed (no remote, not GitHub, etc.).
-fn try_github_provider() -> Option<GitHubProvider> {
-    let git = NativeGitRepository::open(Path::new(".")).ok()?;
-    let (owner, repo) = git.parse_remote().ok()?;
-    Some(GitHubProvider::new(owner, repo))
-}
-
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -263,18 +254,13 @@ fn main() -> anyhow::Result<()> {
                 .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"));
 
             let today = sr_core::release::today_string();
-            let mut entry = sr_core::changelog::ChangelogEntry {
+            let entry = sr_core::changelog::ChangelogEntry {
                 version: plan.next_version.to_string(),
                 date: today,
                 commits: plan.commits.clone(),
                 compare_url: None,
                 repo_url,
-                contributor_map: HashMap::new(),
             };
-            if let Some(provider) = try_github_provider() {
-                let author_shas = entry.unique_author_shas();
-                entry.contributor_map = provider.resolve_contributors(&author_shas);
-            }
             let changelog = sr_core::changelog::ChangelogFormatter::format(&formatter, &[entry])?;
 
             match format {
@@ -379,29 +365,7 @@ fn main() -> anyhow::Result<()> {
                         commits: conventional,
                         compare_url,
                         repo_url: repo_url.clone(),
-                        contributor_map: HashMap::new(),
                     });
-                }
-
-                // Resolve all unique authors across all entries in one batch
-                if let Some(provider) = try_github_provider() {
-                    let mut all_author_shas = Vec::new();
-                    let mut seen = std::collections::BTreeSet::new();
-                    for entry in &entries {
-                        for (author, sha) in entry.unique_author_shas() {
-                            if seen.insert(author.to_string()) {
-                                all_author_shas.push((author.to_string(), sha.to_string()));
-                            }
-                        }
-                    }
-                    let refs: Vec<(&str, &str)> = all_author_shas
-                        .iter()
-                        .map(|(a, s)| (a.as_str(), s.as_str()))
-                        .collect();
-                    let shared_map = provider.resolve_contributors(&refs);
-                    for entry in &mut entries {
-                        entry.contributor_map = shared_map.clone();
-                    }
                 }
 
                 // Newest first
@@ -418,18 +382,13 @@ fn main() -> anyhow::Result<()> {
                     .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"));
 
                 let today = sr_core::release::today_string();
-                let mut entry = sr_core::changelog::ChangelogEntry {
+                let entry = sr_core::changelog::ChangelogEntry {
                     version: plan.next_version.to_string(),
                     date: today,
                     commits: plan.commits,
                     compare_url: None,
                     repo_url,
-                    contributor_map: HashMap::new(),
                 };
-                if let Some(provider) = try_github_provider() {
-                    let author_shas = entry.unique_author_shas();
-                    entry.contributor_map = provider.resolve_contributors(&author_shas);
-                }
 
                 sr_core::changelog::ChangelogFormatter::format(&formatter, &[entry])?
             };

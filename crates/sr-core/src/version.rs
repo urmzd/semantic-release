@@ -57,7 +57,6 @@ mod tests {
             description: "test".into(),
             body: None,
             breaking,
-            author: None,
         }
     }
 

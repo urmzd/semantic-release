@@ -6,7 +6,7 @@ GitHub VCS provider for [sr](https://github.com/urmzd/semantic-release) — back
 
 ## Overview
 
-`sr-github` provides `GitHubProvider`, a concrete implementation of the `VcsProvider` trait from [`sr-core`](https://crates.io/crates/sr-core). It uses the GitHub CLI (`gh`) to create releases, check for existing releases, and resolve commit authors to GitHub usernames.
+`sr-github` provides `GitHubProvider`, a concrete implementation of the `VcsProvider` trait from [`sr-core`](https://crates.io/crates/sr-core). It uses the GitHub CLI (`gh`) to create releases and check for existing releases.
 
 ## Usage
 
@@ -49,7 +49,6 @@ let url = provider.compare_url("v0.9.0", "v1.0.0")?;
 | `delete_release(tag)` | Delete a release by tag |
 | `compare_url(base, head)` | Generate a GitHub compare URL between two refs |
 | `repo_url()` | Return the repository URL (`https://github.com/owner/repo`) |
-| `resolve_contributors(author_shas)` | Map git author names to GitHub `@username` strings |
 
 ## Prerequisites
 

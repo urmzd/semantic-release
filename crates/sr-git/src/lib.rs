@@ -72,7 +72,7 @@ pub fn parse_owner_repo(url: &str) -> Result<(String, String), ReleaseError> {
     Ok((owner.to_string(), repo.to_string()))
 }
 
-/// Parse the output of `git log --format=%H%n%an%n%B%n--END--` into commits.
+/// Parse the output of `git log --format=%H%n%B%n--END--` into commits.
 fn parse_commit_log(output: &str) -> Vec<Commit> {
     if output.is_empty() {
         return Vec::new();
@@ -80,7 +80,6 @@ fn parse_commit_log(output: &str) -> Vec<Commit> {
 
     let mut commits = Vec::new();
     let mut current_sha: Option<String> = None;
-    let mut current_author: Option<String> = None;
     let mut current_message = String::new();
 
     for line in output.lines() {
@@ -89,7 +88,6 @@ fn parse_commit_log(output: &str) -> Vec<Commit> {
                 commits.push(Commit {
                     sha,
                     message: current_message.trim().to_string(),
-                    author: current_author.take(),
                 });
                 current_message.clear();
             }
@@ -98,8 +96,6 @@ fn parse_commit_log(output: &str) -> Vec<Commit> {
             && line.chars().all(|c| c.is_ascii_hexdigit())
         {
             current_sha = Some(line.to_string());
-        } else if current_sha.is_some() && current_author.is_none() {
-            current_author = Some(line.to_string());
         } else {
             if !current_message.is_empty() {
                 current_message.push('\n');
@@ -113,7 +109,6 @@ fn parse_commit_log(output: &str) -> Vec<Commit> {
         commits.push(Commit {
             sha,
             message: current_message.trim().to_string(),
-            author: current_author.take(),
         });
     }
 
@@ -157,7 +152,7 @@ impl GitRepository for NativeGitRepository {
             None => "HEAD".to_string(),
         };
 
-        let output = self.git(&["log", "--format=%H%n%an%n%B%n--END--", &range])?;
+        let output = self.git(&["log", "--format=%H%n%B%n--END--", &range])?;
         Ok(parse_commit_log(&output))
     }
 
@@ -241,7 +236,7 @@ impl GitRepository for NativeGitRepository {
             None => to.to_string(),
         };
 
-        let output = self.git(&["log", "--format=%H%n%an%n%B%n--END--", &range])?;
+        let output = self.git(&["log", "--format=%H%n%B%n--END--", &range])?;
         Ok(parse_commit_log(&output))
     }
 

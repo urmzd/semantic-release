@@ -9,7 +9,6 @@ use crate::version::BumpLevel;
 pub struct Commit {
     pub sha: String,
     pub message: String,
-    pub author: Option<String>,
 }
 
 /// A commit parsed according to the Conventional Commits specification.
@@ -21,7 +20,6 @@ pub struct ConventionalCommit {
     pub description: String,
     pub body: Option<String>,
     pub breaking: bool,
-    pub author: Option<String>,
 }
 
 /// Describes a recognised commit type.
@@ -188,7 +186,6 @@ impl CommitParser for DefaultCommitParser {
             description,
             body,
             breaking,
-            author: commit.author.clone(),
         })
     }
 }
@@ -201,7 +198,6 @@ mod tests {
         Commit {
             sha: "abc1234".into(),
             message: message.into(),
-            author: None,
         }
     }
 

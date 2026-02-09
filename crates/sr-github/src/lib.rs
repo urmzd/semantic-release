@@ -103,27 +103,4 @@ impl VcsProvider for GitHubProvider {
 
         Ok(())
     }
-
-    fn resolve_contributors(
-        &self,
-        author_shas: &[(&str, &str)],
-    ) -> std::collections::HashMap<String, String> {
-        let mut map = std::collections::HashMap::new();
-        let repo_slug = format!("{}/{}", self.owner, self.repo);
-        for &(author, sha) in author_shas {
-            let endpoint = format!("repos/{repo_slug}/commits/{sha}");
-            let output = Command::new("gh")
-                .args(["api", &endpoint, "--jq", ".author.login"])
-                .output();
-            if let Ok(output) = output
-                && output.status.success()
-            {
-                let login = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !login.is_empty() {
-                    map.insert(author.to_string(), format!("@{login}"));
-                }
-            }
-        }
-        map
-    }
 }

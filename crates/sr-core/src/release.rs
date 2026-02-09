@@ -84,16 +84,6 @@ pub trait VcsProvider: Send + Sync {
     fn upload_assets(&self, _tag: &str, _files: &[&str]) -> Result<(), ReleaseError> {
         Ok(())
     }
-
-    /// Resolve git author names to GitHub `@username` strings.
-    /// Each entry in `author_shas` is `(author_name, commit_sha)`.
-    /// Returns a map of `author_name -> @username`. Failures are silently skipped.
-    fn resolve_contributors(
-        &self,
-        _author_shas: &[(&str, &str)],
-    ) -> std::collections::HashMap<String, String> {
-        std::collections::HashMap::new()
-    }
 }
 
 /// Concrete release strategy implementing the trunk-based release flow.
@@ -123,18 +113,13 @@ where
 {
     fn format_changelog(&self, plan: &ReleasePlan) -> Result<String, ReleaseError> {
         let today = today_string();
-        let mut entry = ChangelogEntry {
+        let entry = ChangelogEntry {
             version: plan.next_version.to_string(),
             date: today,
             commits: plan.commits.clone(),
             compare_url: None,
             repo_url: self.vcs.as_ref().and_then(|v| v.repo_url()),
-            contributor_map: std::collections::HashMap::new(),
         };
-        if let Some(ref vcs) = self.vcs {
-            let author_shas = entry.unique_author_shas();
-            entry.contributor_map = vcs.resolve_contributors(&author_shas);
-        }
         self.formatter.format(&[entry])
     }
 }
@@ -671,7 +656,6 @@ mod tests {
         Commit {
             sha: "a".repeat(40),
             message: msg.into(),
-            author: None,
         }
     }
 
