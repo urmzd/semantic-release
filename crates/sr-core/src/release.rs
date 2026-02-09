@@ -29,6 +29,10 @@ fn build_hook_context(plan: &ReleasePlan, phase: &str, dry_run: bool) -> HookCon
         .set("SR_DRY_RUN", dry_run.to_string())
         .set("SR_COMMIT_COUNT", plan.commits.len().to_string())
         .set("SR_HOOK_PHASE", phase)
+        .set(
+            "SR_FLOATING_TAG",
+            plan.floating_tag_name.as_deref().unwrap_or(""),
+        )
 }
 
 /// The computed plan for a release, before execution.
@@ -39,6 +43,7 @@ pub struct ReleasePlan {
     pub bump: BumpLevel,
     pub commits: Vec<ConventionalCommit>,
     pub tag_name: String,
+    pub floating_tag_name: Option<String>,
 }
 
 /// Orchestrates the release flow.
@@ -171,12 +176,19 @@ where
         let next_version = apply_bump(&base_version, bump);
         let tag_name = format!("{}{next_version}", self.config.tag_prefix);
 
+        let floating_tag_name = if self.config.floating_tags {
+            Some(format!("{}{}", self.config.tag_prefix, next_version.major))
+        } else {
+            None
+        };
+
         Ok(ReleasePlan {
             current_version,
             next_version,
             bump,
             commits: conventional_commits,
             tag_name,
+            floating_tag_name,
         })
     }
 
@@ -192,6 +204,10 @@ where
             }
             eprintln!("[dry-run] Would create tag: {}", plan.tag_name);
             eprintln!("[dry-run] Would push tag: {}", plan.tag_name);
+            if let Some(ref floating) = plan.floating_tag_name {
+                eprintln!("[dry-run] Would create/update floating tag: {floating}");
+                eprintln!("[dry-run] Would force-push floating tag: {floating}");
+            }
             if self.vcs.is_some() {
                 eprintln!(
                     "[dry-run] Would create GitHub release for {}",
@@ -346,6 +362,17 @@ where
                 .map_err(&run_failure_hooks)?;
         }
 
+        // 7.5 Force-create and force-push floating tag (e.g. v3)
+        if let Some(ref floating) = plan.floating_tag_name {
+            let floating_msg = format!("Floating tag for {}", plan.tag_name);
+            self.git
+                .force_create_tag(floating, &floating_msg)
+                .map_err(&run_failure_hooks)?;
+            self.git
+                .force_push_tag(floating)
+                .map_err(&run_failure_hooks)?;
+        }
+
         // 8. Post-tag hooks
         let post_tag_ctx = build_hook_context(plan, "post_tag", false);
         self.hooks
@@ -458,6 +485,8 @@ mod tests {
         pushed_tags: Mutex<Vec<String>>,
         committed: Mutex<Vec<(Vec<String>, String)>>,
         push_count: Mutex<u32>,
+        force_created_tags: Mutex<Vec<String>>,
+        force_pushed_tags: Mutex<Vec<String>>,
     }
 
     impl FakeGit {
@@ -469,6 +498,8 @@ mod tests {
                 pushed_tags: Mutex::new(Vec::new()),
                 committed: Mutex::new(Vec::new()),
                 push_count: Mutex::new(0),
+                force_created_tags: Mutex::new(Vec::new()),
+                force_pushed_tags: Mutex::new(Vec::new()),
             }
         }
     }
@@ -531,6 +562,22 @@ mod tests {
 
         fn tag_date(&self, _tag_name: &str) -> Result<String, ReleaseError> {
             Ok("2026-01-01".into())
+        }
+
+        fn force_create_tag(&self, name: &str, _message: &str) -> Result<(), ReleaseError> {
+            self.force_created_tags
+                .lock()
+                .unwrap()
+                .push(name.to_string());
+            Ok(())
+        }
+
+        fn force_push_tag(&self, name: &str) -> Result<(), ReleaseError> {
+            self.force_pushed_tags
+                .lock()
+                .unwrap()
+                .push(name.to_string());
+            Ok(())
         }
     }
 
@@ -1100,5 +1147,158 @@ mod tests {
         // Same pattern twice should not produce duplicates
         let result = resolve_artifact_globs(&[pattern.clone(), pattern]).unwrap();
         assert_eq!(result.len(), 1);
+    }
+
+    // --- floating tags tests ---
+
+    #[test]
+    fn plan_floating_tag_when_enabled() {
+        let tag = TagInfo {
+            name: "v3.2.0".into(),
+            version: Version::new(3, 2, 0),
+            sha: "d".repeat(40),
+        };
+        let mut config = ReleaseConfig::default();
+        config.floating_tags = true;
+
+        let s = make_strategy(vec![tag], vec![raw_commit("fix: patch")], config);
+        let plan = s.plan().unwrap();
+        assert_eq!(plan.next_version, Version::new(3, 2, 1));
+        assert_eq!(plan.floating_tag_name.as_deref(), Some("v3"));
+    }
+
+    #[test]
+    fn plan_no_floating_tag_when_disabled() {
+        let s = make_strategy(
+            vec![],
+            vec![raw_commit("feat: something")],
+            ReleaseConfig::default(),
+        );
+        let plan = s.plan().unwrap();
+        assert!(plan.floating_tag_name.is_none());
+    }
+
+    #[test]
+    fn plan_floating_tag_custom_prefix() {
+        let tag = TagInfo {
+            name: "release-2.5.0".into(),
+            version: Version::new(2, 5, 0),
+            sha: "e".repeat(40),
+        };
+        let mut config = ReleaseConfig::default();
+        config.floating_tags = true;
+        config.tag_prefix = "release-".into();
+
+        let s = make_strategy(vec![tag], vec![raw_commit("fix: patch")], config);
+        let plan = s.plan().unwrap();
+        assert_eq!(plan.floating_tag_name.as_deref(), Some("release-2"));
+    }
+
+    #[test]
+    fn execute_floating_tags_force_create_and_push() {
+        let mut config = ReleaseConfig::default();
+        config.floating_tags = true;
+
+        let tag = TagInfo {
+            name: "v1.2.3".into(),
+            version: Version::new(1, 2, 3),
+            sha: "f".repeat(40),
+        };
+        let s = make_strategy(vec![tag], vec![raw_commit("fix: a bug")], config);
+        let plan = s.plan().unwrap();
+        assert_eq!(plan.floating_tag_name.as_deref(), Some("v1"));
+
+        s.execute(&plan, false).unwrap();
+
+        assert_eq!(*s.git.force_created_tags.lock().unwrap(), vec!["v1"]);
+        assert_eq!(*s.git.force_pushed_tags.lock().unwrap(), vec!["v1"]);
+    }
+
+    #[test]
+    fn execute_no_floating_tags_when_disabled() {
+        let s = make_strategy(
+            vec![],
+            vec![raw_commit("feat: something")],
+            ReleaseConfig::default(),
+        );
+        let plan = s.plan().unwrap();
+        assert!(plan.floating_tag_name.is_none());
+
+        s.execute(&plan, false).unwrap();
+
+        assert!(s.git.force_created_tags.lock().unwrap().is_empty());
+        assert!(s.git.force_pushed_tags.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn execute_floating_tags_dry_run_no_side_effects() {
+        let mut config = ReleaseConfig::default();
+        config.floating_tags = true;
+
+        let tag = TagInfo {
+            name: "v2.0.0".into(),
+            version: Version::new(2, 0, 0),
+            sha: "a".repeat(40),
+        };
+        let s = make_strategy(vec![tag], vec![raw_commit("fix: something")], config);
+        let plan = s.plan().unwrap();
+        assert_eq!(plan.floating_tag_name.as_deref(), Some("v2"));
+
+        s.execute(&plan, true).unwrap();
+
+        assert!(s.git.force_created_tags.lock().unwrap().is_empty());
+        assert!(s.git.force_pushed_tags.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn execute_floating_tags_idempotent() {
+        let mut config = ReleaseConfig::default();
+        config.floating_tags = true;
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        assert_eq!(plan.floating_tag_name.as_deref(), Some("v0"));
+
+        // Run twice
+        s.execute(&plan, false).unwrap();
+        s.execute(&plan, false).unwrap();
+
+        // Force ops run every time (correct for floating tags)
+        assert_eq!(s.git.force_created_tags.lock().unwrap().len(), 2);
+        assert_eq!(s.git.force_pushed_tags.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn hook_context_includes_floating_tag() {
+        let mut config = ReleaseConfig::default();
+        config.floating_tags = true;
+        config.hooks.pre_release = vec!["echo pre".into()];
+
+        let tag = TagInfo {
+            name: "v3.0.0".into(),
+            version: Version::new(3, 0, 0),
+            sha: "b".repeat(40),
+        };
+        let s = make_strategy(vec![tag], vec![raw_commit("feat: new")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        let ctx_log = s.hooks.ctx_log.lock().unwrap();
+        assert!(!ctx_log.is_empty());
+        assert_eq!(ctx_log[0].env.get("SR_FLOATING_TAG").unwrap(), "v3");
+    }
+
+    #[test]
+    fn hook_context_floating_tag_empty_when_disabled() {
+        let mut config = ReleaseConfig::default();
+        config.hooks.pre_release = vec!["echo pre".into()];
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        let ctx_log = s.hooks.ctx_log.lock().unwrap();
+        assert!(!ctx_log.is_empty());
+        assert_eq!(ctx_log[0].env.get("SR_FLOATING_TAG").unwrap(), "");
     }
 }

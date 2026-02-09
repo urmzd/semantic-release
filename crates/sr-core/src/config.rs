@@ -20,6 +20,7 @@ pub struct ReleaseConfig {
     pub version_files: Vec<String>,
     pub version_files_strict: bool,
     pub artifacts: Vec<String>,
+    pub floating_tags: bool,
 }
 
 impl Default for ReleaseConfig {
@@ -36,6 +37,7 @@ impl Default for ReleaseConfig {
             version_files: vec![],
             version_files_strict: false,
             artifacts: vec![],
+            floating_tags: false,
         }
     }
 }
@@ -120,6 +122,7 @@ mod tests {
         assert!(config.hooks.on_failure.is_empty());
         assert!(!config.version_files_strict);
         assert!(config.artifacts.is_empty());
+        assert!(!config.floating_tags);
     }
 
     #[test]
@@ -174,6 +177,18 @@ mod tests {
 
         let config = ReleaseConfig::load(&path).unwrap();
         assert_eq!(config.artifacts, vec!["dist/*.tar.gz", "build/output-*"]);
+        // defaults still apply
+        assert_eq!(config.tag_prefix, "v");
+    }
+
+    #[test]
+    fn load_yaml_with_floating_tags() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(&path, "floating_tags: true\n").unwrap();
+
+        let config = ReleaseConfig::load(&path).unwrap();
+        assert!(config.floating_tags);
         // defaults still apply
         assert_eq!(config.tag_prefix, "v");
     }

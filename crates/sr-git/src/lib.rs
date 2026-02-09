@@ -249,6 +249,16 @@ impl GitRepository for NativeGitRepository {
         let date = self.git(&["log", "-1", "--format=%cd", "--date=short", tag_name])?;
         Ok(date)
     }
+
+    fn force_create_tag(&self, name: &str, message: &str) -> Result<(), ReleaseError> {
+        self.git(&["tag", "-fa", name, "-m", message])?;
+        Ok(())
+    }
+
+    fn force_push_tag(&self, name: &str) -> Result<(), ReleaseError> {
+        self.git(&["push", "origin", name, "--force"])?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

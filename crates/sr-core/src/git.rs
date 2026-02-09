@@ -47,4 +47,10 @@ pub trait GitRepository: Send + Sync {
 
     /// Get the date (YYYY-MM-DD) of the commit a tag points to.
     fn tag_date(&self, tag_name: &str) -> Result<String, ReleaseError>;
+
+    /// Force-create an annotated tag at HEAD, overwriting if it already exists.
+    fn force_create_tag(&self, name: &str, message: &str) -> Result<(), ReleaseError>;
+
+    /// Force-push a tag to the remote, overwriting the remote tag if it exists.
+    fn force_push_tag(&self, name: &str) -> Result<(), ReleaseError>;
 }
