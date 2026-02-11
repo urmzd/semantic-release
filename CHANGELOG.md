@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.0 (2026-02-11)
+
+### Breaking Changes
+
+- remove lifecycle hooks, output structured JSON from sr release ([56e5ed0](https://github.com/urmzd/semantic-release/commit/56e5ed0125c64455129f40a15ab70950aeb2e349))
+
+### Bug Fixes
+
+- add floating_tags, parse JSON output in self-release workflow ([70e0f04](https://github.com/urmzd/semantic-release/commit/70e0f04f4b5abbd621821637c78c851ede770ac5))
+
+
 ## 0.10.0 (2026-02-11)
 
 ### Features
