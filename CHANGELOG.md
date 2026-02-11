@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0 (2026-02-11)
+
+### Features
+
+- add --force flag, structured errors, distinct exit codes, and action outputs ([ea0ba9c](https://github.com/urmzd/semantic-release/commit/ea0ba9cd416465ad5d6d09642b517f232756f557))
+
+### Refactoring
+
+- remove contributors section from release notes ([2831757](https://github.com/urmzd/semantic-release/commit/2831757c0dd85cf63958bf212b4288e229bfffa8))
+
+
 ## 0.9.0 (2026-02-09)
 
 ### Features
