@@ -44,9 +44,27 @@ outputs:
   version:
     description: "The released version (empty if no release)"
     value: ${{ steps.release.outputs.version }}
+  previous-version:
+    description: "The previous version before this release (empty if first release)"
+    value: ${{ steps.release.outputs.previous_version }}
+  tag:
+    description: "The git tag created for this release (empty if no release)"
+    value: ${{ steps.release.outputs.tag }}
+  bump:
+    description: "The bump level applied (major/minor/patch, empty if no release)"
+    value: ${{ steps.release.outputs.bump }}
+  floating-tag:
+    description: "The floating major tag (e.g. v3, empty if disabled or no release)"
+    value: ${{ steps.release.outputs.floating_tag }}
+  commit-count:
+    description: "Number of commits included in this release"
+    value: ${{ steps.release.outputs.commit_count }}
   released:
     description: "Whether a release was created (true/false)"
     value: ${{ steps.release.outputs.released }}
+  json:
+    description: "Full release metadata as JSON (empty if no release)"
+    value: ${{ steps.release.outputs.json }}
 
 runs:
   using: "composite"
@@ -109,19 +127,37 @@ runs:
         done
 
         set +e
-        VERSION=$(sr "${ARGS[@]}")
-        EXIT_CODE=$?
+        JSON_OUTPUT=$(sr "${ARGS[@]}" | tail -1)
+        EXIT_CODE=${PIPESTATUS[0]}
         set -e
 
         if [ "$EXIT_CODE" -eq 0 ]; then
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "json=${JSON_OUTPUT}" >> "$GITHUB_OUTPUT"
+          echo "version=$(echo "$JSON_OUTPUT" | jq -r '.version')" >> "$GITHUB_OUTPUT"
+          echo "previous_version=$(echo "$JSON_OUTPUT" | jq -r '.previous_version')" >> "$GITHUB_OUTPUT"
+          echo "tag=$(echo "$JSON_OUTPUT" | jq -r '.tag')" >> "$GITHUB_OUTPUT"
+          echo "bump=$(echo "$JSON_OUTPUT" | jq -r '.bump')" >> "$GITHUB_OUTPUT"
+          echo "floating_tag=$(echo "$JSON_OUTPUT" | jq -r '.floating_tag')" >> "$GITHUB_OUTPUT"
+          echo "commit_count=$(echo "$JSON_OUTPUT" | jq -r '.commit_count')" >> "$GITHUB_OUTPUT"
           echo "released=true" >> "$GITHUB_OUTPUT"
         elif [ "$EXIT_CODE" -eq 2 ]; then
           echo "No releasable changes found"
+          echo "json=" >> "$GITHUB_OUTPUT"
           echo "version=" >> "$GITHUB_OUTPUT"
+          echo "previous_version=" >> "$GITHUB_OUTPUT"
+          echo "tag=" >> "$GITHUB_OUTPUT"
+          echo "bump=" >> "$GITHUB_OUTPUT"
+          echo "floating_tag=" >> "$GITHUB_OUTPUT"
+          echo "commit_count=" >> "$GITHUB_OUTPUT"
           echo "released=false" >> "$GITHUB_OUTPUT"
         else
+          echo "json=" >> "$GITHUB_OUTPUT"
           echo "version=" >> "$GITHUB_OUTPUT"
+          echo "previous_version=" >> "$GITHUB_OUTPUT"
+          echo "tag=" >> "$GITHUB_OUTPUT"
+          echo "bump=" >> "$GITHUB_OUTPUT"
+          echo "floating_tag=" >> "$GITHUB_OUTPUT"
+          echo "commit_count=" >> "$GITHUB_OUTPUT"
           echo "released=false" >> "$GITHUB_OUTPUT"
           exit "$EXIT_CODE"
         fi

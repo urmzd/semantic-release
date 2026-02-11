@@ -41,8 +41,3 @@ version_files:
 changelog:
   file: CHANGELOG.md
 
-hooks:
-  pre_release:
-    - cargo check --workspace
-    - cargo clippy --workspace -- -D warnings
-    - cargo test --workspace

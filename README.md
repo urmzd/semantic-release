@@ -17,7 +17,7 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 - **Single static binary** — no runtime, no package manager, minimal dependencies.
 - **Language-agnostic** — works with any project that uses git tags for versioning.
 - **Zero-config defaults** — conventional commits + semver + GitHub releases out of the box.
-- **Lifecycle hooks** — run arbitrary shell commands at each phase instead of installing plugins.
+- **Structured JSON output** — pipe `sr release` to `jq` for custom CI pipelines.
 
 ## Features
 
@@ -26,7 +26,7 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 - Automatic version file bumping (`Cargo.toml`, `package.json`, `pyproject.toml`)
 - Changelog generation (Jinja2 templates via `minijinja`)
 - GitHub Releases (via `gh` CLI)
-- Lifecycle hooks (`pre_release`, `post_tag`, `post_release`, `on_failure`)
+- Structured JSON output for CI piping (`sr release | jq .version`)
 - Trunk-based workflow (tag + release from `main`)
 
 ## Installation
@@ -141,7 +141,13 @@ jobs:
 | Output | Description |
 |--------|-------------|
 | `version` | The released version (empty if no release) |
+| `previous-version` | The previous version before this release (empty if first release) |
+| `tag` | The git tag created for this release (empty if no release) |
+| `bump` | The bump level applied (`major`/`minor`/`patch`, empty if no release) |
+| `floating-tag` | The floating major tag (e.g. `v3`, empty if disabled or no release) |
+| `commit-count` | Number of commits included in this release |
 | `released` | Whether a release was created (`true`/`false`) |
+| `json` | Full release metadata as JSON (empty if no release) |
 
 ### Binary download
 
@@ -184,7 +190,7 @@ sr init
 # Preview what the next release would look like (includes changelog)
 sr plan
 
-# Dry-run a release (no side effects, no hooks executed)
+# Dry-run a release (no side effects)
 sr release --dry-run
 
 # Execute the release
@@ -230,14 +236,13 @@ commit (hook validates) → push → sr plan (preview) → sr release (execute)
 
 1. **Commit** — the commit-msg hook ensures every commit follows the conventional format (`feat:`, `fix:`, `feat!:`, etc.).
 2. **Preview** — run `sr plan` to see the next version, included commits, and a changelog preview.
-3. **Dry-run** — run `sr release --dry-run` to simulate the full release without side effects (no hooks are executed, no tags created).
+3. **Dry-run** — run `sr release --dry-run` to simulate the full release without side effects (no tags created).
 4. **Release** — run `sr release` to execute the full pipeline:
-   - Runs `pre_release` hooks (e.g., `cargo test`)
    - Bumps version in configured manifest files
    - Generates and commits the changelog (with version files)
    - Creates and pushes the git tag
    - Creates a GitHub release
-   - Runs `post_release` hooks
+   - Outputs structured JSON to stdout (pipe to `jq` for custom workflows)
 
 ## CLI Reference
 
@@ -306,14 +311,6 @@ version_files:
   # - package.json
   # - pyproject.toml
 
-# Lifecycle hooks — shell commands run at each phase
-hooks:
-  pre_release:              # Before tagging
-    - cargo test --workspace
-  post_tag: []              # After the tag is created
-  post_release: []          # After the GitHub release is published
-  on_failure: []            # If any step fails
-
 # Override commit-type to bump-level mapping (merged with defaults)
 commit_types: {}
 # Example:
@@ -344,7 +341,7 @@ All other types (e.g. `chore`, `docs`, `ci`) do not trigger a release unless ove
 
 | Crate | Description |
 |-------|-------------|
-| [`sr-core`](crates/sr-core/) | Pure domain logic — traits, config, versioning, changelog, hooks |
+| [`sr-core`](crates/sr-core/) | Pure domain logic — traits, config, versioning, changelog |
 | [`sr-git`](crates/sr-git/) | Git implementation (native `git` CLI) |
 | [`sr-github`](crates/sr-github/) | GitHub VCS provider (`gh` CLI) |
 | [`sr-cli`](crates/sr-cli/) | CLI binary (`clap`) — wires everything together |
@@ -359,7 +356,6 @@ All other types (e.g. `chore`, `docs`, `ci`) do not trigger a release unless ove
 | `VcsProvider` | Remote release creation (GitHub, GitLab, etc.) |
 | `CommitParser` | Raw commit to conventional commit |
 | `ChangelogFormatter` | Render changelog entries to text |
-| `HookRunner` | Execute lifecycle shell commands |
 | `ReleaseStrategy` | Orchestrate plan + execute |
 
 ## Design Philosophy
@@ -367,7 +363,7 @@ All other types (e.g. `chore`, `docs`, `ci`) do not trigger a release unless ove
 1. **Trunk-based flow** — releases happen from a single branch; no release branches.
 2. **Conventional commits as source of truth** — commit messages drive versioning.
 3. **Zero-config** — works out of the box with reasonable defaults.
-4. **Explicit over magic** — lifecycle hooks replace opaque plugins.
+4. **Focused scope** — sr handles versioning, tagging, changelog, and publishing. Pre-release validation and downstream actions belong in CI pipeline steps.
 5. **Language-agnostic** — sr knows about git and semver, not about cargo or npm.
 
 ## Development

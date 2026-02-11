@@ -6,7 +6,6 @@ use sr_core::changelog::DefaultChangelogFormatter;
 use sr_core::commit::DefaultCommitParser;
 use sr_core::config::ReleaseConfig;
 use sr_core::error::ReleaseError;
-use sr_core::hooks::ShellHookRunner;
 use sr_core::release::{ReleaseStrategy, TrunkReleaseStrategy, VcsProvider};
 use sr_git::NativeGitRepository;
 use sr_github::GitHubProvider;
@@ -129,7 +128,6 @@ fn build_local_strategy(
         NoopVcsProvider,
         DefaultCommitParser,
         DefaultChangelogFormatter,
-        ShellHookRunner,
     >,
 > {
     let git = NativeGitRepository::open(Path::new("."))?;
@@ -147,7 +145,6 @@ fn build_local_strategy(
         vcs: None,
         parser: DefaultCommitParser,
         formatter,
-        hooks: ShellHookRunner,
         config,
         force,
     })
@@ -162,7 +159,6 @@ fn build_full_strategy(
         GitHubProvider,
         DefaultCommitParser,
         DefaultChangelogFormatter,
-        ShellHookRunner,
     >,
 > {
     let git = NativeGitRepository::open(Path::new("."))?;
@@ -184,7 +180,6 @@ fn build_full_strategy(
         vcs: Some(vcs),
         parser: DefaultCommitParser,
         formatter,
-        hooks: ShellHookRunner,
         config,
         force,
     })
@@ -462,28 +457,47 @@ fn run() -> anyhow::Result<()> {
             config.artifacts.extend(artifacts);
 
             // Try to build with GitHub; fall back to local-only if no token
-            let version = match build_full_strategy(config.clone(), force) {
+            let plan = match build_full_strategy(config.clone(), force) {
                 Ok(strategy) => {
                     let plan = strategy.plan()?;
-                    let version = plan.next_version.to_string();
                     strategy.execute(&plan, dry_run)?;
-                    version
+                    plan
                 }
                 Err(e) => {
                     if dry_run {
                         eprintln!("warning: {e} (continuing dry-run without GitHub)");
                         let strategy = build_local_strategy(config, force)?;
                         let plan = strategy.plan()?;
-                        let version = plan.next_version.to_string();
                         strategy.execute(&plan, dry_run)?;
-                        version
+                        plan
                     } else {
                         return Err(e);
                     }
                 }
             };
-            // Print version to stdout (machine-readable output; all other logs go to stderr)
-            println!("{version}");
+            // Print structured JSON to stdout (machine-readable; all logs go to stderr)
+            #[derive(serde::Serialize)]
+            struct ReleaseOutput {
+                version: String,
+                previous_version: String,
+                tag: String,
+                bump: String,
+                floating_tag: String,
+                commit_count: usize,
+            }
+            let output = ReleaseOutput {
+                version: plan.next_version.to_string(),
+                previous_version: plan
+                    .current_version
+                    .as_ref()
+                    .map(|v| v.to_string())
+                    .unwrap_or_default(),
+                tag: plan.tag_name.clone(),
+                bump: plan.bump.to_string(),
+                floating_tag: plan.floating_tag_name.as_deref().unwrap_or("").to_string(),
+                commit_count: plan.commits.len(),
+            };
+            println!("{}", serde_json::to_string(&output)?);
             Ok(())
         }
     }

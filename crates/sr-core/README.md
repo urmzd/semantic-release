@@ -17,14 +17,13 @@ Pure domain logic for [sr](https://github.com/urmzd/semantic-release) — a sing
 | `CommitParser` | Parse raw commits into conventional commits |
 | `CommitClassifier` | Map commit types to bump levels and changelog sections |
 | `ChangelogFormatter` | Render changelog entries to text |
-| `HookRunner` | Execute lifecycle shell commands |
 | `ReleaseStrategy` | Orchestrate plan + execute |
 
 ## Key Types
 
 | Type | Description |
 |------|-------------|
-| `ReleaseConfig` | Full configuration (branches, tag prefix, hooks, version files, etc.) |
+| `ReleaseConfig` | Full configuration (branches, tag prefix, version files, etc.) |
 | `ReleasePlan` | The computed next release (current version, next version, bump level, commits) |
 | `ConventionalCommit` | A parsed conventional commit (type, scope, description, breaking flag) |
 | `BumpLevel` | `Patch`, `Minor`, or `Major` |
@@ -56,7 +55,6 @@ use sr_core::config::ReleaseConfig;
 use sr_core::release::TrunkReleaseStrategy;
 use sr_core::commit::{DefaultCommitParser, DefaultCommitClassifier};
 use sr_core::changelog::DefaultChangelogFormatter;
-use sr_core::hooks::ShellHookRunner;
 use sr_core::release::ReleaseStrategy;
 
 // Load configuration
@@ -73,8 +71,8 @@ let strategy = TrunkReleaseStrategy {
         config.breaking_section.clone(),
         config.misc_section.clone(),
     ),
-    hooks: ShellHookRunner,
     config: config.clone(),
+    force: false,
 };
 
 // Plan the release

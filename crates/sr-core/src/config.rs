@@ -16,7 +16,6 @@ pub struct ReleaseConfig {
     pub misc_section: String,
     pub types: Vec<CommitType>,
     pub changelog: ChangelogConfig,
-    pub hooks: HooksConfig,
     pub version_files: Vec<String>,
     pub version_files_strict: bool,
     pub artifacts: Vec<String>,
@@ -33,7 +32,6 @@ impl Default for ReleaseConfig {
             misc_section: "Miscellaneous".into(),
             types: default_commit_types(),
             changelog: ChangelogConfig::default(),
-            hooks: HooksConfig::default(),
             version_files: vec![],
             version_files_strict: false,
             artifacts: vec![],
@@ -47,15 +45,6 @@ impl Default for ReleaseConfig {
 pub struct ChangelogConfig {
     pub file: Option<String>,
     pub template: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct HooksConfig {
-    pub pre_release: Vec<String>,
-    pub post_tag: Vec<String>,
-    pub post_release: Vec<String>,
-    pub on_failure: Vec<String>,
 }
 
 impl ReleaseConfig {
@@ -116,10 +105,6 @@ mod tests {
         assert_eq!(config.breaking_section, "Breaking Changes");
         assert_eq!(config.misc_section, "Miscellaneous");
         assert!(!config.types.is_empty());
-        assert!(config.hooks.pre_release.is_empty());
-        assert!(config.hooks.post_tag.is_empty());
-        assert!(config.hooks.post_release.is_empty());
-        assert!(config.hooks.on_failure.is_empty());
         assert!(!config.version_files_strict);
         assert!(config.artifacts.is_empty());
         assert!(!config.floating_tags);
@@ -138,16 +123,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.yml");
         let mut f = std::fs::File::create(&path).unwrap();
-        writeln!(
-            f,
-            "branches:\n  - develop\ntag_prefix: release-\nhooks:\n  pre_release:\n    - echo hi"
-        )
-        .unwrap();
+        writeln!(f, "branches:\n  - develop\ntag_prefix: release-").unwrap();
 
         let config = ReleaseConfig::load(&path).unwrap();
         assert_eq!(config.branches, vec!["develop"]);
         assert_eq!(config.tag_prefix, "release-");
-        assert_eq!(config.hooks.pre_release, vec!["echo hi"]);
     }
 
     #[test]

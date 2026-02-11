@@ -9,31 +9,8 @@ use crate::commit::{CommitParser, ConventionalCommit, DefaultCommitClassifier};
 use crate::config::ReleaseConfig;
 use crate::error::ReleaseError;
 use crate::git::GitRepository;
-use crate::hooks::{HookCommand, HookContext, HookRunner};
 use crate::version::{BumpLevel, apply_bump, determine_bump};
 use crate::version_files::bump_version_file;
-
-/// Build a `HookContext` populated with `SR_*` environment variables from a release plan.
-fn build_hook_context(plan: &ReleasePlan, phase: &str, dry_run: bool) -> HookContext {
-    HookContext::default()
-        .set("SR_VERSION", plan.next_version.to_string())
-        .set(
-            "SR_PREVIOUS_VERSION",
-            plan.current_version
-                .as_ref()
-                .map(|v| v.to_string())
-                .unwrap_or_default(),
-        )
-        .set("SR_TAG", &plan.tag_name)
-        .set("SR_BUMP_LEVEL", plan.bump.to_string())
-        .set("SR_DRY_RUN", dry_run.to_string())
-        .set("SR_COMMIT_COUNT", plan.commits.len().to_string())
-        .set("SR_HOOK_PHASE", phase)
-        .set(
-            "SR_FLOATING_TAG",
-            plan.floating_tag_name.as_deref().unwrap_or(""),
-        )
-}
 
 /// The computed plan for a release, before execution.
 #[derive(Debug, Serialize)]
@@ -87,31 +64,22 @@ pub trait VcsProvider: Send + Sync {
 }
 
 /// Concrete release strategy implementing the trunk-based release flow.
-pub struct TrunkReleaseStrategy<G, V, C, F, H> {
+pub struct TrunkReleaseStrategy<G, V, C, F> {
     pub git: G,
     pub vcs: Option<V>,
     pub parser: C,
     pub formatter: F,
-    pub hooks: H,
     pub config: ReleaseConfig,
     /// When true, re-release the current tag if HEAD is at the latest tag.
     pub force: bool,
 }
 
-fn to_hook_commands(commands: &[String]) -> Vec<HookCommand> {
-    commands
-        .iter()
-        .map(|c| HookCommand { command: c.clone() })
-        .collect()
-}
-
-impl<G, V, C, F, H> TrunkReleaseStrategy<G, V, C, F, H>
+impl<G, V, C, F> TrunkReleaseStrategy<G, V, C, F>
 where
     G: GitRepository,
     V: VcsProvider,
     C: CommitParser,
     F: ChangelogFormatter,
-    H: HookRunner,
 {
     fn format_changelog(&self, plan: &ReleasePlan) -> Result<String, ReleaseError> {
         let today = today_string();
@@ -126,13 +94,12 @@ where
     }
 }
 
-impl<G, V, C, F, H> ReleaseStrategy for TrunkReleaseStrategy<G, V, C, F, H>
+impl<G, V, C, F> ReleaseStrategy for TrunkReleaseStrategy<G, V, C, F>
 where
     G: GitRepository,
     V: VcsProvider,
     C: CommitParser,
     F: ChangelogFormatter,
-    H: HookRunner,
 {
     fn plan(&self) -> Result<ReleasePlan, ReleaseError> {
         let tag_info = self.git.latest_tag(&self.config.tag_prefix)?;
@@ -215,13 +182,6 @@ where
     fn execute(&self, plan: &ReleasePlan, dry_run: bool) -> Result<(), ReleaseError> {
         if dry_run {
             let changelog_body = self.format_changelog(plan)?;
-            let ctx = build_hook_context(plan, "pre_release", true);
-            let mut env_keys: Vec<&String> = ctx.env.keys().collect();
-            env_keys.sort();
-            eprintln!("[dry-run] Hook environment variables:");
-            for key in env_keys {
-                eprintln!("[dry-run]   {key}={}", ctx.env[key]);
-            }
             eprintln!("[dry-run] Would create tag: {}", plan.tag_name);
             eprintln!("[dry-run] Would push tag: {}", plan.tag_name);
             if let Some(ref floating) = plan.floating_tag_name {
@@ -269,38 +229,14 @@ where
                     }
                 }
             }
-            for hook in &self.config.hooks.pre_release {
-                eprintln!("[dry-run] Would run pre-release hook: {hook}");
-            }
-            for hook in &self.config.hooks.post_tag {
-                eprintln!("[dry-run] Would run post-tag hook: {hook}");
-            }
-            for hook in &self.config.hooks.post_release {
-                eprintln!("[dry-run] Would run post-release hook: {hook}");
-            }
             eprintln!("[dry-run] Changelog:\n{changelog_body}");
             return Ok(());
         }
 
-        let failure_ctx = build_hook_context(plan, "on_failure", false);
-        let run_failure_hooks = |err: ReleaseError| -> ReleaseError {
-            let _ = self.hooks.run(
-                &to_hook_commands(&self.config.hooks.on_failure),
-                &failure_ctx,
-            );
-            err
-        };
+        // 1. Format changelog
+        let changelog_body = self.format_changelog(plan)?;
 
-        // 1. Pre-release hooks
-        let pre_ctx = build_hook_context(plan, "pre_release", false);
-        self.hooks
-            .run(&to_hook_commands(&self.config.hooks.pre_release), &pre_ctx)
-            .map_err(&run_failure_hooks)?;
-
-        // 2. Format changelog
-        let changelog_body = self.format_changelog(plan).map_err(&run_failure_hooks)?;
-
-        // 2.5 Bump version files
+        // 2. Bump version files
         let version_str = plan.next_version.to_string();
         let mut bumped_files: Vec<&str> = Vec::new();
         for file in &self.config.version_files {
@@ -309,7 +245,7 @@ where
                 Err(e) if !self.config.version_files_strict => {
                     eprintln!("warning: {e} — skipping {file}");
                 }
-                Err(e) => return Err(run_failure_hooks(e)),
+                Err(e) => return Err(e),
             }
         }
 
@@ -317,9 +253,7 @@ where
         if let Some(ref changelog_file) = self.config.changelog.file {
             let path = Path::new(changelog_file);
             let existing = if path.exists() {
-                fs::read_to_string(path)
-                    .map_err(|e| ReleaseError::Changelog(e.to_string()))
-                    .map_err(&run_failure_hooks)?
+                fs::read_to_string(path).map_err(|e| ReleaseError::Changelog(e.to_string()))?
             } else {
                 String::new()
             };
@@ -335,9 +269,7 @@ where
                     None => format!("{existing}\n\n{changelog_body}\n"),
                 }
             };
-            fs::write(path, new_content)
-                .map_err(|e| ReleaseError::Changelog(e.to_string()))
-                .map_err(&run_failure_hooks)?;
+            fs::write(path, new_content).map_err(|e| ReleaseError::Changelog(e.to_string()))?;
         }
 
         // 4. Stage and commit changelog + version files (skip if nothing to stage)
@@ -351,82 +283,48 @@ where
             }
             if !paths_to_stage.is_empty() {
                 let commit_msg = format!("chore(release): {} [skip ci]", plan.tag_name);
-                self.git
-                    .stage_and_commit(&paths_to_stage, &commit_msg)
-                    .map_err(&run_failure_hooks)?;
+                self.git.stage_and_commit(&paths_to_stage, &commit_msg)?;
             }
         }
 
         // 5. Create tag (skip if it already exists locally)
-        if !self
-            .git
-            .tag_exists(&plan.tag_name)
-            .map_err(&run_failure_hooks)?
-        {
-            self.git
-                .create_tag(&plan.tag_name, &changelog_body)
-                .map_err(&run_failure_hooks)?;
+        if !self.git.tag_exists(&plan.tag_name)? {
+            self.git.create_tag(&plan.tag_name, &changelog_body)?;
         }
 
         // 6. Push commit (safe to re-run — no-op if up to date)
-        self.git.push().map_err(&run_failure_hooks)?;
+        self.git.push()?;
 
         // 7. Push tag (skip if tag already exists on remote)
-        if !self
-            .git
-            .remote_tag_exists(&plan.tag_name)
-            .map_err(&run_failure_hooks)?
-        {
-            self.git
-                .push_tag(&plan.tag_name)
-                .map_err(&run_failure_hooks)?;
+        if !self.git.remote_tag_exists(&plan.tag_name)? {
+            self.git.push_tag(&plan.tag_name)?;
         }
 
-        // 7.5 Force-create and force-push floating tag (e.g. v3)
+        // 8. Force-create and force-push floating tag (e.g. v3)
         if let Some(ref floating) = plan.floating_tag_name {
             let floating_msg = format!("Floating tag for {}", plan.tag_name);
-            self.git
-                .force_create_tag(floating, &floating_msg)
-                .map_err(&run_failure_hooks)?;
-            self.git
-                .force_push_tag(floating)
-                .map_err(&run_failure_hooks)?;
+            self.git.force_create_tag(floating, &floating_msg)?;
+            self.git.force_push_tag(floating)?;
         }
-
-        // 8. Post-tag hooks
-        let post_tag_ctx = build_hook_context(plan, "post_tag", false);
-        self.hooks
-            .run(
-                &to_hook_commands(&self.config.hooks.post_tag),
-                &post_tag_ctx,
-            )
-            .map_err(&run_failure_hooks)?;
 
         // 9. Create GitHub release (skip if exists, or update it)
         if let Some(ref vcs) = self.vcs {
             let release_name = format!("{} {}", self.config.tag_prefix, plan.next_version);
-            if vcs
-                .release_exists(&plan.tag_name)
-                .map_err(&run_failure_hooks)?
-            {
+            if vcs.release_exists(&plan.tag_name)? {
                 // Delete and recreate to update the release notes
-                vcs.delete_release(&plan.tag_name)
-                    .map_err(&run_failure_hooks)?;
+                vcs.delete_release(&plan.tag_name)?;
             }
-            vcs.create_release(&plan.tag_name, &release_name, &changelog_body, false)
-                .map_err(&run_failure_hooks)?;
+            vcs.create_release(&plan.tag_name, &release_name, &changelog_body, false)?;
         }
 
-        // 9.5 Upload artifacts
+        // 10. Upload artifacts
         if let Some(ref vcs) = self.vcs
             && !self.config.artifacts.is_empty()
         {
-            let resolved =
-                resolve_artifact_globs(&self.config.artifacts).map_err(&run_failure_hooks)?;
+            let resolved = resolve_artifact_globs(&self.config.artifacts)?;
             if !resolved.is_empty() {
                 let file_refs: Vec<&str> = resolved.iter().map(|s| s.as_str()).collect();
-                vcs.upload_assets(&plan.tag_name, &file_refs)
-                    .map_err(&run_failure_hooks)?;
+                vcs.upload_assets(&plan.tag_name, &file_refs)?;
                 eprintln!(
                     "Uploaded {} artifact(s) to {}",
                     resolved.len(),
@@ -434,15 +332,6 @@ where
                 );
             }
         }
-
-        // 10. Post-release hooks
-        let post_release_ctx = build_hook_context(plan, "post_release", false);
-        self.hooks
-            .run(
-                &to_hook_commands(&self.config.hooks.post_release),
-                &post_release_ctx,
-            )
-            .map_err(&run_failure_hooks)?;
 
         eprintln!("Released {}", plan.tag_name);
         Ok(())
@@ -494,7 +383,6 @@ mod tests {
     use crate::commit::{Commit, DefaultCommitParser};
     use crate::config::ReleaseConfig;
     use crate::git::{GitRepository, TagInfo};
-    use crate::hooks::{HookCommand, HookContext, HookRunner};
 
     // --- Fakes ---
 
@@ -669,32 +557,6 @@ mod tests {
         }
     }
 
-    struct FakeHooks {
-        run_log: Mutex<Vec<String>>,
-        ctx_log: Mutex<Vec<HookContext>>,
-    }
-
-    impl FakeHooks {
-        fn new() -> Self {
-            Self {
-                run_log: Mutex::new(Vec::new()),
-                ctx_log: Mutex::new(Vec::new()),
-            }
-        }
-    }
-
-    impl HookRunner for FakeHooks {
-        fn run(&self, hooks: &[HookCommand], ctx: &HookContext) -> Result<(), ReleaseError> {
-            for h in hooks {
-                self.run_log.lock().unwrap().push(h.command.clone());
-            }
-            if !hooks.is_empty() {
-                self.ctx_log.lock().unwrap().push(ctx.clone());
-            }
-            Ok(())
-        }
-    }
-
     // --- Helpers ---
 
     fn raw_commit(msg: &str) -> Commit {
@@ -708,13 +570,8 @@ mod tests {
         tags: Vec<TagInfo>,
         commits: Vec<Commit>,
         config: ReleaseConfig,
-    ) -> TrunkReleaseStrategy<
-        FakeGit,
-        FakeVcs,
-        DefaultCommitParser,
-        DefaultChangelogFormatter,
-        FakeHooks,
-    > {
+    ) -> TrunkReleaseStrategy<FakeGit, FakeVcs, DefaultCommitParser, DefaultChangelogFormatter>
+    {
         let types = config.types.clone();
         let breaking_section = config.breaking_section.clone();
         let misc_section = config.misc_section.clone();
@@ -723,7 +580,6 @@ mod tests {
             vcs: Some(FakeVcs::new()),
             parser: DefaultCommitParser,
             formatter: DefaultChangelogFormatter::new(None, types, breaking_section, misc_section),
-            hooks: FakeHooks::new(),
             config,
             force: false,
         }
@@ -798,18 +654,16 @@ mod tests {
 
     #[test]
     fn execute_dry_run_no_side_effects() {
-        let mut config = ReleaseConfig::default();
-        config.hooks.pre_release = vec!["echo pre".into()];
-        config.hooks.post_tag = vec!["echo post-tag".into()];
-        config.hooks.post_release = vec!["echo post-release".into()];
-
-        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let s = make_strategy(
+            vec![],
+            vec![raw_commit("feat: something")],
+            ReleaseConfig::default(),
+        );
         let plan = s.plan().unwrap();
         s.execute(&plan, true).unwrap();
 
         assert!(s.git.created_tags.lock().unwrap().is_empty());
         assert!(s.git.pushed_tags.lock().unwrap().is_empty());
-        assert!(s.hooks.run_log.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -824,21 +678,6 @@ mod tests {
 
         assert_eq!(*s.git.created_tags.lock().unwrap(), vec!["v0.1.0"]);
         assert_eq!(*s.git.pushed_tags.lock().unwrap(), vec!["v0.1.0"]);
-    }
-
-    #[test]
-    fn execute_runs_hooks_in_order() {
-        let mut config = ReleaseConfig::default();
-        config.hooks.pre_release = vec!["echo pre".into()];
-        config.hooks.post_tag = vec!["echo post-tag".into()];
-        config.hooks.post_release = vec!["echo post-release".into()];
-
-        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
-        let plan = s.plan().unwrap();
-        s.execute(&plan, false).unwrap();
-
-        let log = s.hooks.run_log.lock().unwrap();
-        assert_eq!(*log, vec!["echo pre", "echo post-tag", "echo post-release"]);
     }
 
     #[test]
@@ -966,69 +805,6 @@ mod tests {
         // One entry: delete removed the first, create added a replacement
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].0, "v0.1.0");
-    }
-
-    #[test]
-    fn execute_passes_hook_context_with_version_info() {
-        let tag = TagInfo {
-            name: "v1.2.3".into(),
-            version: Version::new(1, 2, 3),
-            sha: "b".repeat(40),
-        };
-        let mut config = ReleaseConfig::default();
-        config.hooks.pre_release = vec!["echo pre".into()];
-        config.hooks.post_tag = vec!["echo post-tag".into()];
-        config.hooks.post_release = vec!["echo post-release".into()];
-
-        let s = make_strategy(
-            vec![tag],
-            vec![raw_commit("feat: first"), raw_commit("fix: second")],
-            config,
-        );
-        let plan = s.plan().unwrap();
-        s.execute(&plan, false).unwrap();
-
-        let ctx_log = s.hooks.ctx_log.lock().unwrap();
-        assert_eq!(ctx_log.len(), 3);
-
-        // pre_release context
-        let pre = &ctx_log[0];
-        assert_eq!(pre.env.get("SR_VERSION").unwrap(), "1.3.0");
-        assert_eq!(pre.env.get("SR_PREVIOUS_VERSION").unwrap(), "1.2.3");
-        assert_eq!(pre.env.get("SR_TAG").unwrap(), "v1.3.0");
-        assert_eq!(pre.env.get("SR_BUMP_LEVEL").unwrap(), "minor");
-        assert_eq!(pre.env.get("SR_DRY_RUN").unwrap(), "false");
-        assert_eq!(pre.env.get("SR_COMMIT_COUNT").unwrap(), "2");
-        assert_eq!(pre.env.get("SR_HOOK_PHASE").unwrap(), "pre_release");
-
-        // post_tag context
-        let post_tag = &ctx_log[1];
-        assert_eq!(post_tag.env.get("SR_HOOK_PHASE").unwrap(), "post_tag");
-        assert_eq!(post_tag.env.get("SR_VERSION").unwrap(), "1.3.0");
-
-        // post_release context
-        let post_release = &ctx_log[2];
-        assert_eq!(
-            post_release.env.get("SR_HOOK_PHASE").unwrap(),
-            "post_release"
-        );
-        assert_eq!(post_release.env.get("SR_VERSION").unwrap(), "1.3.0");
-    }
-
-    #[test]
-    fn hook_context_first_release_has_empty_previous_version() {
-        let mut config = ReleaseConfig::default();
-        config.hooks.pre_release = vec!["echo pre".into()];
-
-        let s = make_strategy(vec![], vec![raw_commit("feat: initial")], config);
-        let plan = s.plan().unwrap();
-        s.execute(&plan, false).unwrap();
-
-        let ctx_log = s.hooks.ctx_log.lock().unwrap();
-        assert!(!ctx_log.is_empty());
-        let pre = &ctx_log[0];
-        assert_eq!(pre.env.get("SR_PREVIOUS_VERSION").unwrap(), "");
-        assert_eq!(pre.env.get("SR_VERSION").unwrap(), "0.1.0");
     }
 
     #[test]
@@ -1296,40 +1072,6 @@ mod tests {
         // Force ops run every time (correct for floating tags)
         assert_eq!(s.git.force_created_tags.lock().unwrap().len(), 2);
         assert_eq!(s.git.force_pushed_tags.lock().unwrap().len(), 2);
-    }
-
-    #[test]
-    fn hook_context_includes_floating_tag() {
-        let mut config = ReleaseConfig::default();
-        config.floating_tags = true;
-        config.hooks.pre_release = vec!["echo pre".into()];
-
-        let tag = TagInfo {
-            name: "v3.0.0".into(),
-            version: Version::new(3, 0, 0),
-            sha: "b".repeat(40),
-        };
-        let s = make_strategy(vec![tag], vec![raw_commit("feat: new")], config);
-        let plan = s.plan().unwrap();
-        s.execute(&plan, false).unwrap();
-
-        let ctx_log = s.hooks.ctx_log.lock().unwrap();
-        assert!(!ctx_log.is_empty());
-        assert_eq!(ctx_log[0].env.get("SR_FLOATING_TAG").unwrap(), "v3");
-    }
-
-    #[test]
-    fn hook_context_floating_tag_empty_when_disabled() {
-        let mut config = ReleaseConfig::default();
-        config.hooks.pre_release = vec!["echo pre".into()];
-
-        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
-        let plan = s.plan().unwrap();
-        s.execute(&plan, false).unwrap();
-
-        let ctx_log = s.hooks.ctx_log.lock().unwrap();
-        assert!(!ctx_log.is_empty());
-        assert_eq!(ctx_log[0].env.get("SR_FLOATING_TAG").unwrap(), "");
     }
 
     // --- force mode tests ---

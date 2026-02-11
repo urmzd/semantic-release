@@ -19,9 +19,6 @@ pub enum ReleaseError {
     #[error("vcs provider error: {0}")]
     Vcs(String),
 
-    #[error("hook failed: {command}")]
-    Hook { command: String },
-
     #[error("changelog error: {0}")]
     Changelog(String),
 

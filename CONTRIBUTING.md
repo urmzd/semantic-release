@@ -93,7 +93,7 @@ Other types (`chore`, `docs`, `ci`, `refactor`, `test`, `build`, `style`, `rever
 
 ```
 crates/
-  sr-core/     Pure domain logic — traits, config, versioning, changelog, hooks
+  sr-core/     Pure domain logic — traits, config, versioning, changelog
   sr-git/      Git implementation (native git CLI)
   sr-github/   GitHub VCS provider (gh CLI)
   sr-cli/      CLI binary (clap) — wires everything together
@@ -109,7 +109,6 @@ action.yml     GitHub Action composite wrapper (repo root)
 | `CommitParser` | Raw commit to conventional commit |
 | `CommitClassifier` | Single source of truth for type → bump level / changelog section |
 | `ChangelogFormatter` | Render changelog entries to text |
-| `HookRunner` | Execute lifecycle shell commands |
 | `ReleaseStrategy` | Orchestrate plan + execute |
 
 ## Code Style
