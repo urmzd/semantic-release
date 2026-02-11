@@ -2,11 +2,13 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ReleaseError {
-    #[error("no commits found since last release")]
-    NoCommits,
+    #[error("no commits found since tag {tag} ({sha})")]
+    NoCommits { tag: String, sha: String },
 
-    #[error("no releasable commits found (no feat/fix/breaking changes)")]
-    NoBump,
+    #[error(
+        "no releasable commits found in {commit_count} commit(s) since tag {tag} (no feat/fix/breaking changes)"
+    )]
+    NoBump { tag: String, commit_count: usize },
 
     #[error("configuration error: {0}")]
     Config(String),

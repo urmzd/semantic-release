@@ -254,6 +254,10 @@ impl GitRepository for NativeGitRepository {
         self.git(&["push", "origin", name, "--force"])?;
         Ok(())
     }
+
+    fn head_sha(&self) -> Result<String, ReleaseError> {
+        self.git(&["rev-parse", "HEAD"])
+    }
 }
 
 #[cfg(test)]

@@ -94,6 +94,8 @@ pub struct TrunkReleaseStrategy<G, V, C, F, H> {
     pub formatter: F,
     pub hooks: H,
     pub config: ReleaseConfig,
+    /// When true, re-release the current tag if HEAD is at the latest tag.
+    pub force: bool,
 }
 
 fn to_hook_commands(commands: &[String]) -> Vec<HookCommand> {
@@ -142,7 +144,32 @@ where
 
         let raw_commits = self.git.commits_since(from_sha)?;
         if raw_commits.is_empty() {
-            return Err(ReleaseError::NoCommits);
+            // Force mode: re-release if HEAD is exactly at the latest tag
+            if self.force
+                && let Some(ref info) = tag_info
+            {
+                let head = self.git.head_sha()?;
+                if head == info.sha {
+                    let floating_tag_name = if self.config.floating_tags {
+                        Some(format!("{}{}", self.config.tag_prefix, info.version.major))
+                    } else {
+                        None
+                    };
+                    return Ok(ReleasePlan {
+                        current_version: Some(info.version.clone()),
+                        next_version: info.version.clone(),
+                        bump: BumpLevel::Patch, // nominal; no actual bump
+                        commits: vec![],
+                        tag_name: info.name.clone(),
+                        floating_tag_name,
+                    });
+                }
+            }
+            let (tag, sha) = match &tag_info {
+                Some(info) => (info.name.clone(), info.sha.clone()),
+                None => ("(none)".into(), "(none)".into()),
+            };
+            return Err(ReleaseError::NoCommits { tag, sha });
         }
 
         let conventional_commits: Vec<ConventionalCommit> = raw_commits
@@ -154,8 +181,16 @@ where
             self.config.types.clone(),
             self.config.commit_pattern.clone(),
         );
+        let tag_for_err = tag_info
+            .as_ref()
+            .map(|i| i.name.clone())
+            .unwrap_or_else(|| "(none)".into());
+        let commit_count = conventional_commits.len();
         let bump =
-            determine_bump(&conventional_commits, &classifier).ok_or(ReleaseError::NoBump)?;
+            determine_bump(&conventional_commits, &classifier).ok_or(ReleaseError::NoBump {
+                tag: tag_for_err,
+                commit_count,
+            })?;
 
         let base_version = current_version.clone().unwrap_or(Version::new(0, 0, 0));
         let next_version = apply_bump(&base_version, bump);
@@ -466,6 +501,7 @@ mod tests {
     struct FakeGit {
         tags: Vec<TagInfo>,
         commits: Vec<Commit>,
+        head: String,
         created_tags: Mutex<Vec<String>>,
         pushed_tags: Mutex<Vec<String>>,
         committed: Mutex<Vec<(Vec<String>, String)>>,
@@ -476,9 +512,14 @@ mod tests {
 
     impl FakeGit {
         fn new(tags: Vec<TagInfo>, commits: Vec<Commit>) -> Self {
+            let head = tags
+                .last()
+                .map(|t| t.sha.clone())
+                .unwrap_or_else(|| "0".repeat(40));
             Self {
                 tags,
                 commits,
+                head,
                 created_tags: Mutex::new(Vec::new()),
                 pushed_tags: Mutex::new(Vec::new()),
                 committed: Mutex::new(Vec::new()),
@@ -563,6 +604,10 @@ mod tests {
                 .unwrap()
                 .push(name.to_string());
             Ok(())
+        }
+
+        fn head_sha(&self) -> Result<String, ReleaseError> {
+            Ok(self.head.clone())
         }
     }
 
@@ -680,6 +725,7 @@ mod tests {
             formatter: DefaultChangelogFormatter::new(None, types, breaking_section, misc_section),
             hooks: FakeHooks::new(),
             config,
+            force: false,
         }
     }
 
@@ -689,7 +735,7 @@ mod tests {
     fn plan_no_commits_returns_error() {
         let s = make_strategy(vec![], vec![], ReleaseConfig::default());
         let err = s.plan().unwrap_err();
-        assert!(matches!(err, ReleaseError::NoCommits));
+        assert!(matches!(err, ReleaseError::NoCommits { .. }));
     }
 
     #[test]
@@ -700,7 +746,7 @@ mod tests {
             ReleaseConfig::default(),
         );
         let err = s.plan().unwrap_err();
-        assert!(matches!(err, ReleaseError::NoBump));
+        assert!(matches!(err, ReleaseError::NoBump { .. }));
     }
 
     #[test]
@@ -1284,5 +1330,51 @@ mod tests {
         let ctx_log = s.hooks.ctx_log.lock().unwrap();
         assert!(!ctx_log.is_empty());
         assert_eq!(ctx_log[0].env.get("SR_FLOATING_TAG").unwrap(), "");
+    }
+
+    // --- force mode tests ---
+
+    #[test]
+    fn force_rerelease_when_tag_at_head() {
+        let tag = TagInfo {
+            name: "v1.2.3".into(),
+            version: Version::new(1, 2, 3),
+            sha: "a".repeat(40),
+        };
+        let mut s = make_strategy(vec![tag], vec![], ReleaseConfig::default());
+        // HEAD == tag SHA, and no new commits
+        s.git.head = "a".repeat(40);
+        s.force = true;
+
+        let plan = s.plan().unwrap();
+        assert_eq!(plan.next_version, Version::new(1, 2, 3));
+        assert_eq!(plan.tag_name, "v1.2.3");
+        assert!(plan.commits.is_empty());
+        assert_eq!(plan.current_version, Some(Version::new(1, 2, 3)));
+    }
+
+    #[test]
+    fn force_fails_when_tag_not_at_head() {
+        let tag = TagInfo {
+            name: "v1.2.3".into(),
+            version: Version::new(1, 2, 3),
+            sha: "a".repeat(40),
+        };
+        let mut s = make_strategy(vec![tag], vec![], ReleaseConfig::default());
+        // HEAD != tag SHA
+        s.git.head = "b".repeat(40);
+        s.force = true;
+
+        let err = s.plan().unwrap_err();
+        assert!(matches!(err, ReleaseError::NoCommits { .. }));
+    }
+
+    #[test]
+    fn force_fails_with_no_tags() {
+        let mut s = make_strategy(vec![], vec![], ReleaseConfig::default());
+        s.force = true;
+
+        let err = s.plan().unwrap_err();
+        assert!(matches!(err, ReleaseError::NoCommits { .. }));
     }
 }

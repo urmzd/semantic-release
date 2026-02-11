@@ -15,6 +15,10 @@ inputs:
     description: "Preview changes without executing them"
     required: false
     default: "false"
+  force:
+    description: "Re-release the current tag (use when a previous release partially failed)"
+    required: false
+    default: "false"
   config:
     description: "Path to the config file"
     required: false
@@ -87,11 +91,14 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
-        set -euo pipefail
+        set -uo pipefail
         ARGS=()
         ARGS+=("${{ inputs.command }}")
         if [ "${{ inputs.dry-run }}" = "true" ]; then
           ARGS+=("--dry-run")
+        fi
+        if [ "${{ inputs.force }}" = "true" ]; then
+          ARGS+=("--force")
         fi
         IFS=$'\n,' read -ra PATTERNS <<< "${{ inputs.artifacts }}"
         for pattern in "${PATTERNS[@]}"; do
@@ -100,4 +107,21 @@ runs:
             ARGS+=("--artifacts" "$trimmed")
           fi
         done
-        sr "${ARGS[@]}"
+
+        set +e
+        VERSION=$(sr "${ARGS[@]}")
+        EXIT_CODE=$?
+        set -e
+
+        if [ "$EXIT_CODE" -eq 0 ]; then
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "released=true" >> "$GITHUB_OUTPUT"
+        elif [ "$EXIT_CODE" -eq 2 ]; then
+          echo "No releasable changes found"
+          echo "version=" >> "$GITHUB_OUTPUT"
+          echo "released=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=" >> "$GITHUB_OUTPUT"
+          echo "released=false" >> "$GITHUB_OUTPUT"
+          exit "$EXIT_CODE"
+        fi

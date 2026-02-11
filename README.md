@@ -79,16 +79,62 @@ Use outputs in subsequent steps:
         run: echo "Released ${{ steps.sr.outputs.version }}"
 ```
 
+Upload artifacts to the release:
+
+```yaml
+      # Build artifacts are downloaded into release-assets/
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - uses: urmzd/semantic-release@v0
+        with:
+          artifacts: "release-assets/*"
+```
+
+The `artifacts` input accepts glob patterns (newline or comma separated). All matching files are uploaded to the GitHub release. This keeps artifact handling self-contained in the action — no separate upload steps needed.
+
+Manual re-trigger with `workflow_dispatch` (useful when a previous release partially failed):
+
+```yaml
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Re-release the current tag"
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: urmzd/semantic-release@v0
+        with:
+          force: ${{ github.event.inputs.force || 'false' }}
+```
+
 #### Inputs
 
 | Input | Description | Default |
 |-------|-------------|---------|
 | `command` | The `sr` subcommand to run (`release`, `plan`, `changelog`, `version`, `config`, `completions`) | `release` |
 | `dry-run` | Preview changes without executing them | `false` |
+| `force` | Re-release the current tag (use when a previous release partially failed) | `false` |
 | `config` | Path to the config file | `.urmzd.sr.yml` |
 | `github-token` | GitHub token for creating releases | `${{ github.token }}` |
 | `git-user-name` | Git user name for tag creation | `semantic-release[bot]` |
 | `git-user-email` | Git user email for tag creation | `semantic-release[bot]@urmzd.com` |
+| `artifacts` | Glob patterns for artifact files to upload (newline or comma separated) | `""` |
 
 #### Outputs
 
@@ -208,12 +254,34 @@ commit (hook validates) → push → sr plan (preview) → sr release (execute)
 ### Common flags
 
 - `sr release --dry-run` — preview without making changes
+- `sr release --force` — re-release the current tag (for partial failure recovery)
 - `sr plan --format json` — machine-readable output
 - `sr changelog --write` — write changelog to disk
 - `sr version --short` — print only the version number
 - `sr config --resolved` — show config with defaults applied
 - `sr init --force` — overwrite existing config file
 - `sr completions bash` — generate Bash completions
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success — a release was created (or dry-run completed). The released version is printed to stdout. |
+| `1` | Real error — configuration issue, git failure, VCS provider error, etc. |
+| `2` | No releasable changes — no new commits or no releasable commit types since the last tag. |
+
+### `--force` flag
+
+Use `--force` to re-run a release that partially failed (e.g. the tag was created but artifact upload failed). Force mode only works when HEAD is exactly at the latest tag — it re-executes the release pipeline for that tag without bumping the version.
+
+```bash
+# Re-release the current tag after a partial failure
+sr release --force
+```
+
+Force mode will error if:
+- There are no tags yet (nothing to re-release)
+- HEAD is not at the latest tag (there are new commits — use a normal release instead)
 
 ## Configuration
 

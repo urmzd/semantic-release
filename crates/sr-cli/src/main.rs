@@ -1,9 +1,11 @@
 use std::path::Path;
+use std::process::ExitCode;
 
 use clap::{CommandFactory, Parser, Subcommand};
 use sr_core::changelog::DefaultChangelogFormatter;
 use sr_core::commit::DefaultCommitParser;
 use sr_core::config::ReleaseConfig;
+use sr_core::error::ReleaseError;
 use sr_core::hooks::ShellHookRunner;
 use sr_core::release::{ReleaseStrategy, TrunkReleaseStrategy, VcsProvider};
 use sr_git::NativeGitRepository;
@@ -29,6 +31,10 @@ enum Commands {
         /// Glob patterns for artifact files to upload to the release (repeatable)
         #[arg(long = "artifacts")]
         artifacts: Vec<String>,
+
+        /// Re-release the current tag (use when a previous release partially failed)
+        #[arg(long)]
+        force: bool,
     },
 
     /// Show what the next release would look like
@@ -116,6 +122,7 @@ impl VcsProvider for NoopVcsProvider {
 
 fn build_local_strategy(
     config: ReleaseConfig,
+    force: bool,
 ) -> anyhow::Result<
     TrunkReleaseStrategy<
         NativeGitRepository,
@@ -142,11 +149,13 @@ fn build_local_strategy(
         formatter,
         hooks: ShellHookRunner,
         config,
+        force,
     })
 }
 
 fn build_full_strategy(
     config: ReleaseConfig,
+    force: bool,
 ) -> anyhow::Result<
     TrunkReleaseStrategy<
         NativeGitRepository,
@@ -177,10 +186,23 @@ fn build_full_strategy(
         formatter,
         hooks: ShellHookRunner,
         config,
+        force,
     })
 }
 
-fn main() -> anyhow::Result<()> {
+/// Returns true if the error represents "nothing to release" (as opposed to a real failure).
+fn is_no_release_error(err: &anyhow::Error) -> bool {
+    if let Some(re) = err.downcast_ref::<ReleaseError>() {
+        matches!(
+            re,
+            ReleaseError::NoCommits { .. } | ReleaseError::NoBump { .. }
+        )
+    } else {
+        false
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -220,7 +242,7 @@ fn main() -> anyhow::Result<()> {
 
         Commands::Version { short } => {
             let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
-            let strategy = build_local_strategy(config)?;
+            let strategy = build_local_strategy(config, false)?;
             let plan = strategy.plan()?;
             if short {
                 println!("{}", plan.next_version);
@@ -245,7 +267,7 @@ fn main() -> anyhow::Result<()> {
                 config.breaking_section.clone(),
                 config.misc_section.clone(),
             );
-            let strategy = build_local_strategy(config)?;
+            let strategy = build_local_strategy(config, false)?;
             let plan = strategy.plan()?;
 
             let repo_url = NativeGitRepository::open(Path::new("."))
@@ -373,7 +395,7 @@ fn main() -> anyhow::Result<()> {
 
                 sr_core::changelog::ChangelogFormatter::format(&formatter, &entries)?
             } else {
-                let strategy = build_local_strategy(config.clone())?;
+                let strategy = build_local_strategy(config.clone(), false)?;
                 let plan = strategy.plan()?;
 
                 let repo_url = NativeGitRepository::open(Path::new("."))
@@ -431,28 +453,53 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
 
-        Commands::Release { dry_run, artifacts } => {
+        Commands::Release {
+            dry_run,
+            artifacts,
+            force,
+        } => {
             let mut config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
             config.artifacts.extend(artifacts);
 
             // Try to build with GitHub; fall back to local-only if no token
-            match build_full_strategy(config.clone()) {
+            let version = match build_full_strategy(config.clone(), force) {
                 Ok(strategy) => {
                     let plan = strategy.plan()?;
+                    let version = plan.next_version.to_string();
                     strategy.execute(&plan, dry_run)?;
+                    version
                 }
                 Err(e) => {
                     if dry_run {
                         eprintln!("warning: {e} (continuing dry-run without GitHub)");
-                        let strategy = build_local_strategy(config)?;
+                        let strategy = build_local_strategy(config, force)?;
                         let plan = strategy.plan()?;
+                        let version = plan.next_version.to_string();
                         strategy.execute(&plan, dry_run)?;
+                        version
                     } else {
                         return Err(e);
                     }
                 }
-            }
+            };
+            // Print version to stdout (machine-readable output; all other logs go to stderr)
+            println!("{version}");
             Ok(())
+        }
+    }
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::from(0),
+        Err(e) => {
+            if is_no_release_error(&e) {
+                eprintln!("{e:#}");
+                ExitCode::from(2)
+            } else {
+                eprintln!("error: {e:#}");
+                ExitCode::from(1)
+            }
         }
     }
 }

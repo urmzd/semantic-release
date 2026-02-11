@@ -53,4 +53,7 @@ pub trait GitRepository: Send + Sync {
 
     /// Force-push a tag to the remote, overwriting the remote tag if it exists.
     fn force_push_tag(&self, name: &str) -> Result<(), ReleaseError>;
+
+    /// Return the full SHA of HEAD.
+    fn head_sha(&self) -> Result<String, ReleaseError>;
 }
