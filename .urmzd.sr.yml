@@ -41,3 +41,5 @@ version_files:
 changelog:
   file: CHANGELOG.md
 
+floating_tags: true
+

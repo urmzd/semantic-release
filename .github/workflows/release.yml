@@ -85,44 +85,34 @@ jobs:
         with:
           path: artifacts
 
+      - name: Flatten artifact directories
+        run: |
+          mkdir -p release-assets
+          for dir in artifacts/sr-*/; do
+            TARGET=$(basename "$dir")
+            cp "$dir/sr" "release-assets/$TARGET"
+          done
+          chmod +x release-assets/*
+
       - name: Run sr release
         id: sr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          OUTPUT=$(./target/release/sr release 2>&1) && RC=0 || RC=$?
-          echo "$OUTPUT"
+          set -uo pipefail
+          set +e
+          JSON=$(./target/release/sr release --artifacts "release-assets/*" | tail -1)
+          RC=${PIPESTATUS[0]}
+          set -e
           if [ $RC -eq 0 ]; then
             echo "released=true" >> "$GITHUB_OUTPUT"
-            TAG=$(git describe --tags --abbrev=0)
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          elif echo "$OUTPUT" | grep -q "no releasable commits"; then
+            echo "version=$(echo "$JSON" | jq -r '.version')" >> "$GITHUB_OUTPUT"
+          elif [ $RC -eq 2 ]; then
             echo "No releasable commits — skipping release"
             echo "released=false" >> "$GITHUB_OUTPUT"
           else
             exit $RC
           fi
-
-      - name: Update floating major version tag
-        if: steps.sr.outputs.released == 'true'
-        run: |
-          MAJOR=$(echo "${{ steps.sr.outputs.version }}" | cut -d. -f1)
-          git tag -f "v${MAJOR}" HEAD
-          git push origin "v${MAJOR}" --force
-
-      - name: Upload binaries to release
-        if: steps.sr.outputs.released == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG=$(git describe --tags --abbrev=0)
-
-          for dir in artifacts/sr-*/; do
-            TARGET=$(basename "$dir")
-            cp "$dir/sr" "$TARGET"
-            chmod +x "$TARGET"
-            gh release upload "$TAG" "$TARGET" --clobber
-          done
 
       - name: Publish to crates.io
         if: steps.sr.outputs.released == 'true'
