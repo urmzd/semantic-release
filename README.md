@@ -34,7 +34,7 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 ### GitHub Action (recommended)
 
 ```yaml
-- uses: urmzd/semantic-release@v0
+- uses: urmzd/semantic-release@v1
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -58,13 +58,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: urmzd/semantic-release@v0
+      - uses: urmzd/semantic-release@v1
 ```
 
 Dry-run on pull requests:
 
 ```yaml
-      - uses: urmzd/semantic-release@v0
+      - uses: urmzd/semantic-release@v1
         with:
           command: release
           dry-run: "true"
@@ -73,7 +73,7 @@ Dry-run on pull requests:
 Use outputs in subsequent steps:
 
 ```yaml
-      - uses: urmzd/semantic-release@v0
+      - uses: urmzd/semantic-release@v1
         id: sr
       - if: steps.sr.outputs.released == 'true'
         run: echo "Released ${{ steps.sr.outputs.version }}"
@@ -88,7 +88,7 @@ Upload artifacts to the release:
           path: release-assets
           merge-multiple: true
 
-      - uses: urmzd/semantic-release@v0
+      - uses: urmzd/semantic-release@v1
         with:
           artifacts: "release-assets/*"
 ```
@@ -118,7 +118,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: urmzd/semantic-release@v0
+      - uses: urmzd/semantic-release@v1
         with:
           force: ${{ github.event.inputs.force || 'false' }}
 ```
