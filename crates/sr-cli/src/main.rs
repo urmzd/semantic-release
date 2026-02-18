@@ -162,9 +162,9 @@ fn build_full_strategy(
     >,
 > {
     let git = NativeGitRepository::open(Path::new("."))?;
-    let (owner, repo) = git.parse_remote()?;
+    let (hostname, owner, repo) = git.parse_remote_full()?;
 
-    let vcs = GitHubProvider::new(owner, repo);
+    let vcs = GitHubProvider::new(owner, repo, hostname);
     let types = config.types.clone();
     let breaking_section = config.breaking_section.clone();
     let misc_section = config.misc_section.clone();
@@ -267,8 +267,8 @@ fn run() -> anyhow::Result<()> {
 
             let repo_url = NativeGitRepository::open(Path::new("."))
                 .ok()
-                .and_then(|git| git.parse_remote().ok())
-                .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"));
+                .and_then(|git| git.parse_remote_full().ok())
+                .map(|(hostname, owner, repo)| format!("https://{hostname}/{owner}/{repo}"));
 
             let today = sr_core::release::today_string();
             let entry = sr_core::changelog::ChangelogEntry {
@@ -342,9 +342,9 @@ fn run() -> anyhow::Result<()> {
 
                 let git = NativeGitRepository::open(Path::new("."))?;
                 let repo_url = git
-                    .parse_remote()
+                    .parse_remote_full()
                     .ok()
-                    .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"));
+                    .map(|(hostname, owner, repo)| format!("https://{hostname}/{owner}/{repo}"));
 
                 let tags = git.all_tags(&config.tag_prefix)?;
                 if tags.is_empty() {
@@ -395,8 +395,8 @@ fn run() -> anyhow::Result<()> {
 
                 let repo_url = NativeGitRepository::open(Path::new("."))
                     .ok()
-                    .and_then(|git| git.parse_remote().ok())
-                    .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"));
+                    .and_then(|git| git.parse_remote_full().ok())
+                    .map(|(hostname, owner, repo)| format!("https://{hostname}/{owner}/{repo}"));
 
                 let today = sr_core::release::today_string();
                 let entry = sr_core::changelog::ChangelogEntry {

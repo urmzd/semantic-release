@@ -92,7 +92,7 @@ runs:
         esac
 
         case "$OS" in
-          linux)  TARGET="${ARCH}-unknown-linux-gnu" ;;
+          linux)  TARGET="${ARCH}-unknown-linux-musl" ;;
           darwin) TARGET="${ARCH}-apple-darwin" ;;
           *) echo "Unsupported OS: $OS"; exit 1 ;;
         esac
@@ -100,8 +100,10 @@ runs:
         BINARY_NAME="sr-${TARGET}"
         DOWNLOAD_URL="https://github.com/urmzd/semantic-release/releases/latest/download/${BINARY_NAME}"
 
-        curl -sSfL "$DOWNLOAD_URL" -o /usr/local/bin/sr
-        chmod +x /usr/local/bin/sr
+        mkdir -p "$HOME/.local/bin"
+        curl -sSfL "$DOWNLOAD_URL" -o "$HOME/.local/bin/sr"
+        chmod +x "$HOME/.local/bin/sr"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Run sr
       id: release

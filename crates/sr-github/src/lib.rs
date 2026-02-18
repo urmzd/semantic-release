@@ -7,11 +7,20 @@ use sr_core::release::VcsProvider;
 pub struct GitHubProvider {
     owner: String,
     repo: String,
+    hostname: String,
 }
 
 impl GitHubProvider {
-    pub fn new(owner: String, repo: String) -> Self {
-        Self { owner, repo }
+    pub fn new(owner: String, repo: String, hostname: String) -> Self {
+        Self {
+            owner,
+            repo,
+            hostname,
+        }
+    }
+
+    fn base_url(&self) -> String {
+        format!("https://{}/{}/{}", self.hostname, self.owner, self.repo)
     }
 }
 
@@ -50,10 +59,7 @@ impl VcsProvider for GitHubProvider {
     }
 
     fn compare_url(&self, base: &str, head: &str) -> Result<String, ReleaseError> {
-        Ok(format!(
-            "https://github.com/{}/{}/compare/{base}...{head}",
-            self.owner, self.repo,
-        ))
+        Ok(format!("{}/compare/{base}...{head}", self.base_url()))
     }
 
     fn release_exists(&self, tag: &str) -> Result<bool, ReleaseError> {
@@ -66,7 +72,7 @@ impl VcsProvider for GitHubProvider {
     }
 
     fn repo_url(&self) -> Option<String> {
-        Some(format!("https://github.com/{}/{}", self.owner, self.repo))
+        Some(self.base_url())
     }
 
     fn delete_release(&self, tag: &str) -> Result<(), ReleaseError> {

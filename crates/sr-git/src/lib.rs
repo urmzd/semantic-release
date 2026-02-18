@@ -46,30 +46,49 @@ impl NativeGitRepository {
         let url = self.git(&["remote", "get-url", "origin"])?;
         parse_owner_repo(&url)
     }
+
+    /// Parse (hostname, owner, repo) from a git remote URL.
+    pub fn parse_remote_full(&self) -> Result<(String, String, String), ReleaseError> {
+        let url = self.git(&["remote", "get-url", "origin"])?;
+        parse_remote_url(&url)
+    }
 }
 
-/// Extract owner/repo from a GitHub remote URL.
-/// Supports SSH (git@github.com:owner/repo.git) and HTTPS (https://github.com/owner/repo.git).
-pub fn parse_owner_repo(url: &str) -> Result<(String, String), ReleaseError> {
+/// Extract (hostname, owner, repo) from a git remote URL.
+/// Supports SSH (git@hostname:owner/repo.git) and HTTPS (https://hostname/owner/repo.git).
+pub fn parse_remote_url(url: &str) -> Result<(String, String, String), ReleaseError> {
     let trimmed = url.trim_end_matches(".git");
 
-    // Try HTTPS/HTTP first: https://github.com/owner/repo
-    let path = trimmed
+    // Try HTTPS/HTTP first: https://hostname/owner/repo
+    if let Some(rest) = trimmed
         .strip_prefix("https://")
         .or_else(|| trimmed.strip_prefix("http://"))
-        .and_then(|s| {
-            // Skip the hostname: "github.com/owner/repo" -> "owner/repo"
-            s.split_once('/').map(|(_, rest)| rest)
-        })
-        // Fall back to SSH style: git@github.com:owner/repo
-        .or_else(|| trimmed.rsplit_once(':').map(|(_, p)| p))
-        .ok_or_else(|| ReleaseError::Git(format!("cannot parse remote URL: {url}")))?;
+    {
+        let (hostname, path) = rest
+            .split_once('/')
+            .ok_or_else(|| ReleaseError::Git(format!("cannot parse remote URL: {url}")))?;
+        let (owner, repo) = path
+            .split_once('/')
+            .ok_or_else(|| ReleaseError::Git(format!("cannot parse owner/repo from: {url}")))?;
+        return Ok((hostname.to_string(), owner.to_string(), repo.to_string()));
+    }
 
-    let (owner, repo) = path
-        .split_once('/')
-        .ok_or_else(|| ReleaseError::Git(format!("cannot parse owner/repo from: {url}")))?;
+    // SSH style: git@hostname:owner/repo
+    if let Some((host_part, path)) = trimmed.split_once(':') {
+        let hostname = host_part.rsplit('@').next().unwrap_or(host_part);
+        let (owner, repo) = path
+            .split_once('/')
+            .ok_or_else(|| ReleaseError::Git(format!("cannot parse owner/repo from: {url}")))?;
+        return Ok((hostname.to_string(), owner.to_string(), repo.to_string()));
+    }
 
-    Ok((owner.to_string(), repo.to_string()))
+    Err(ReleaseError::Git(format!("cannot parse remote URL: {url}")))
+}
+
+/// Extract owner/repo from a git remote URL (convenience wrapper).
+pub fn parse_owner_repo(url: &str) -> Result<(String, String), ReleaseError> {
+    let (_, owner, repo) = parse_remote_url(url)?;
+    Ok((owner, repo))
 }
 
 /// Parse the output of `git log --format=%H%n%B%n--END--` into commits.
@@ -282,6 +301,50 @@ mod tests {
     #[test]
     fn parse_https_no_git_suffix() {
         let (owner, repo) = parse_owner_repo("https://github.com/urmzd/semantic-release").unwrap();
+        assert_eq!(owner, "urmzd");
+        assert_eq!(repo, "semantic-release");
+    }
+
+    #[test]
+    fn parse_remote_url_github_https() {
+        let (host, owner, repo) =
+            parse_remote_url("https://github.com/urmzd/semantic-release.git").unwrap();
+        assert_eq!(host, "github.com");
+        assert_eq!(owner, "urmzd");
+        assert_eq!(repo, "semantic-release");
+    }
+
+    #[test]
+    fn parse_remote_url_github_ssh() {
+        let (host, owner, repo) =
+            parse_remote_url("git@github.com:urmzd/semantic-release.git").unwrap();
+        assert_eq!(host, "github.com");
+        assert_eq!(owner, "urmzd");
+        assert_eq!(repo, "semantic-release");
+    }
+
+    #[test]
+    fn parse_remote_url_ghes_https() {
+        let (host, owner, repo) =
+            parse_remote_url("https://ghes.example.com/org/my-repo.git").unwrap();
+        assert_eq!(host, "ghes.example.com");
+        assert_eq!(owner, "org");
+        assert_eq!(repo, "my-repo");
+    }
+
+    #[test]
+    fn parse_remote_url_ghes_ssh() {
+        let (host, owner, repo) = parse_remote_url("git@ghes.example.com:org/my-repo.git").unwrap();
+        assert_eq!(host, "ghes.example.com");
+        assert_eq!(owner, "org");
+        assert_eq!(repo, "my-repo");
+    }
+
+    #[test]
+    fn parse_remote_url_no_git_suffix() {
+        let (host, owner, repo) =
+            parse_remote_url("https://github.com/urmzd/semantic-release").unwrap();
+        assert_eq!(host, "github.com");
         assert_eq!(owner, "urmzd");
         assert_eq!(repo, "semantic-release");
     }

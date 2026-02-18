@@ -156,14 +156,21 @@ Download the latest release for your platform from
 
 | Target | File |
 |--------|------|
-| Linux x86_64 | `sr-x86_64-unknown-linux-gnu` |
-| Linux aarch64 | `sr-aarch64-unknown-linux-gnu` |
+| Linux x86_64 (glibc) | `sr-x86_64-unknown-linux-gnu` |
+| Linux aarch64 (glibc) | `sr-aarch64-unknown-linux-gnu` |
+| Linux x86_64 (musl/static) | `sr-x86_64-unknown-linux-musl` |
+| Linux aarch64 (musl/static) | `sr-aarch64-unknown-linux-musl` |
 | macOS x86_64 | `sr-x86_64-apple-darwin` |
 | macOS aarch64 | `sr-aarch64-apple-darwin` |
 
+The MUSL variants are statically linked and work on any Linux distribution (Alpine, Debian, RHEL, etc.). Prefer these for maximum compatibility.
+
 ```bash
-chmod +x sr-* && mv sr-* /usr/local/bin/sr
+mkdir -p ~/.local/bin
+chmod +x sr-* && mv sr-* ~/.local/bin/sr
 ```
+
+Ensure `~/.local/bin` is on your `$PATH`.
 
 ### Build from source
 
@@ -180,6 +187,38 @@ gh auth login
 ```
 
 The `gh` CLI reads the `GH_TOKEN` environment variable for authentication. The GitHub Action sets this automatically.
+
+## GitHub Enterprise Server (GHES)
+
+`sr` works with GitHub Enterprise Server out of the box. The hostname is auto-detected from your git remote URL — changelog links and compare URLs will point to the correct host automatically.
+
+### Setup
+
+Authenticate `gh` with your GHES instance:
+
+```bash
+gh auth login --hostname ghes.example.com
+```
+
+Or set the `GH_HOST` environment variable:
+
+```bash
+export GH_HOST=ghes.example.com
+```
+
+### GitHub Actions on GHES
+
+```yaml
+- uses: urmzd/semantic-release@v1
+  env:
+    GH_HOST: ghes.example.com
+```
+
+### How it works
+
+1. `sr` reads the `origin` remote URL and extracts the hostname (e.g. `ghes.example.com`).
+2. Changelog links and compare URLs use `https://<hostname>/owner/repo/...` instead of hardcoded `github.com`.
+3. The `gh` CLI resolves the correct API endpoint via `GH_HOST` or its authenticated hostnames.
 
 ## Quick Start
 
@@ -243,6 +282,60 @@ commit (hook validates) → push → sr plan (preview) → sr release (execute)
    - Creates and pushes the git tag
    - Creates a GitHub release
    - Outputs structured JSON to stdout (pipe to `jq` for custom workflows)
+
+## Post-release hooks
+
+`sr` outputs structured JSON to stdout, making it easy to trigger post-release actions.
+
+### GitHub Actions
+
+Use the action outputs to run steps conditionally:
+
+```yaml
+- uses: urmzd/semantic-release@v1
+  id: sr
+- if: steps.sr.outputs.released == 'true'
+  run: ./deploy.sh ${{ steps.sr.outputs.version }}
+- if: steps.sr.outputs.released == 'true'
+  run: |
+    curl -X POST "$SLACK_WEBHOOK" \
+      -d "{\"text\": \"Released v${{ steps.sr.outputs.version }}\"}"
+```
+
+### CLI
+
+Pipe `sr release` output to downstream scripts:
+
+```bash
+# Extract the version
+VERSION=$(sr release | jq -r '.version')
+
+# Feed JSON into a custom script
+sr release | my-post-release-hook.sh
+
+# Publish to a package registry after release
+VERSION=$(sr release | jq -r '.version')
+if [ -n "$VERSION" ]; then
+  npm publish
+fi
+```
+
+### JSON output schema
+
+`sr release` prints a JSON object to stdout on success:
+
+```json
+{
+  "version": "1.2.3",
+  "previous_version": "1.2.2",
+  "tag": "v1.2.3",
+  "bump": "patch",
+  "floating_tag": "v1",
+  "commit_count": 4
+}
+```
+
+All diagnostic messages go to stderr, so stdout is always clean JSON (or empty on exit code 2).
 
 ## CLI Reference
 
