@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 (2026-02-18)
+
+### Features
+
+- add GHES support, MUSL builds, ~/.local/bin install path, and post-release hooks docs ([32cdafa](https://github.com/urmzd/semantic-release/commit/32cdafadcc8b617c02c360b51e564a2437cbba96))
+
+### Miscellaneous
+
+- update README examples to reference v1 ([bf6e998](https://github.com/urmzd/semantic-release/commit/bf6e9986b88c04e31605613d61f1fde8a5763795))
+- update Cargo.toml license to Apache-2.0 ([b41d16a](https://github.com/urmzd/semantic-release/commit/b41d16ac4b2afcfacbb69dc0b848eb945a08607f))
+- license under Apache 2.0 ([039c7fb](https://github.com/urmzd/semantic-release/commit/039c7fb4edeedbaced90999a85230700410df7f0))
+
+
 ## 1.0.0 (2026-02-11)
 
 ### Breaking Changes
