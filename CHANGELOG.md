@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0 (2026-02-19)
+
+### Features
+
+- replace gh CLI with direct GitHub REST API calls ([c04c82c](https://github.com/urmzd/semantic-release/commit/c04c82c48474ee458dae376ce5d70fbf96385977))
+- prevent interactive git auth prompts and support CI runner credentials ([5f19d00](https://github.com/urmzd/semantic-release/commit/5f19d00e8ed0845100439b01666c4484e9066c1b))
+
+### Bug Fixes
+
+- clear existing git extraheader before injecting auth ([028e940](https://github.com/urmzd/semantic-release/commit/028e940dd9fe84f3d5157a7d45e8bcc1f490a377))
+
+
 ## 1.1.0 (2026-02-18)
 
 ### Features
