@@ -41,11 +41,14 @@ impl NativeGitRepository {
         cmd.arg("-C").arg(&self.path);
 
         // Inject HTTP Basic auth header scoped to the target hostname.
+        // First clear any existing extraheader (e.g. from actions/checkout) to
+        // avoid sending duplicate Authorization headers, then set ours.
         if let Some((hostname, token)) = &self.http_auth {
             let credentials = format!("x-access-token:{token}");
             let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
             let config_key = format!("http.https://{hostname}/.extraheader");
             let config_val = format!("AUTHORIZATION: basic {encoded}");
+            cmd.args(["-c", &format!("{config_key}=")]);
             cmd.args(["-c", &format!("{config_key}={config_val}")]);
         }
 
