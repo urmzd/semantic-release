@@ -164,7 +164,12 @@ fn build_full_strategy(
     let git = NativeGitRepository::open(Path::new("."))?;
     let (hostname, owner, repo) = git.parse_remote_full()?;
 
-    let vcs = GitHubProvider::new(owner, repo, hostname);
+    let token = std::env::var("GH_TOKEN")
+        .or_else(|_| std::env::var("GITHUB_TOKEN"))
+        .map_err(|_| anyhow::anyhow!("neither GH_TOKEN nor GITHUB_TOKEN is set"))?;
+
+    let git = git.with_http_auth(hostname.clone(), token.clone());
+    let vcs = GitHubProvider::new(owner, repo, hostname, token);
     let types = config.types.clone();
     let breaking_section = config.breaking_section.clone();
     let misc_section = config.misc_section.clone();

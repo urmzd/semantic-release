@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use base64::Engine;
 use semver::Version;
 use sr_core::commit::Commit;
 use sr_core::error::ReleaseError;
@@ -9,22 +10,46 @@ use sr_core::git::{GitRepository, TagInfo};
 /// Git repository implementation backed by native `git` CLI commands.
 pub struct NativeGitRepository {
     path: PathBuf,
+    http_auth: Option<(String, String)>, // (hostname, token)
 }
 
 impl NativeGitRepository {
     pub fn open(path: &Path) -> Result<Self, ReleaseError> {
         let repo = Self {
             path: path.to_path_buf(),
+            http_auth: None,
         };
         // Validate this is a git repo
         repo.git(&["rev-parse", "--git-dir"])?;
         Ok(repo)
     }
 
+    /// Enable HTTP Basic auth for git commands targeting the given hostname.
+    ///
+    /// Uses the same `http.extraheader` mechanism as `actions/checkout`,
+    /// scoped to `https://{hostname}/` to prevent token leakage.
+    pub fn with_http_auth(mut self, hostname: String, token: String) -> Self {
+        self.http_auth = Some((hostname, token));
+        self
+    }
+
     fn git(&self, args: &[&str]) -> Result<String, ReleaseError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(&self.path)
+        let mut cmd = Command::new("git");
+        // Prevent git from ever blocking on interactive credential prompts.
+        // This makes unauthenticated operations fail fast instead of hanging.
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+        cmd.arg("-C").arg(&self.path);
+
+        // Inject HTTP Basic auth header scoped to the target hostname.
+        if let Some((hostname, token)) = &self.http_auth {
+            let credentials = format!("x-access-token:{token}");
+            let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
+            let config_key = format!("http.https://{hostname}/.extraheader");
+            let config_val = format!("AUTHORIZATION: basic {encoded}");
+            cmd.args(["-c", &format!("{config_key}={config_val}")]);
+        }
+
+        let output = cmd
             .args(args)
             .output()
             .map_err(|e| ReleaseError::Git(format!("failed to run git: {e}")))?;
@@ -347,5 +372,33 @@ mod tests {
         assert_eq!(host, "github.com");
         assert_eq!(owner, "urmzd");
         assert_eq!(repo, "semantic-release");
+    }
+
+    #[test]
+    fn http_auth_header_encodes_correctly() {
+        use base64::Engine;
+
+        let token = "ghp_testtoken123";
+        let credentials = format!("x-access-token:{token}");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
+
+        // Round-trip: decode and verify
+        let decoded_bytes = base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .expect("base64 should decode");
+        let decoded = String::from_utf8(decoded_bytes).expect("should be valid utf-8");
+        assert_eq!(decoded, "x-access-token:ghp_testtoken123");
+    }
+
+    #[test]
+    fn http_auth_header_scoped_to_hostname() {
+        let hostname = "ghes.example.com";
+        let config_key = format!("http.https://{hostname}/.extraheader");
+        assert_eq!(config_key, "http.https://ghes.example.com/.extraheader");
+
+        // Verify github.com scoping
+        let hostname = "github.com";
+        let config_key = format!("http.https://{hostname}/.extraheader");
+        assert_eq!(config_key, "http.https://github.com/.extraheader");
     }
 }

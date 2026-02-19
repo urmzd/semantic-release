@@ -1,18 +1,18 @@
 # sr-github
 
-GitHub VCS provider for [sr](https://github.com/urmzd/semantic-release) — backed by the [`gh` CLI](https://cli.github.com/).
+GitHub VCS provider for [sr](https://github.com/urmzd/semantic-release) — backed by the GitHub REST API.
 
 [![crates.io](https://img.shields.io/crates/v/sr-github.svg)](https://crates.io/crates/sr-github)
 
 ## Overview
 
-`sr-github` provides `GitHubProvider`, a concrete implementation of the `VcsProvider` trait from [`sr-core`](https://crates.io/crates/sr-core). It uses the GitHub CLI (`gh`) to create releases and check for existing releases.
+`sr-github` provides `GitHubProvider`, a concrete implementation of the `VcsProvider` trait from [`sr-core`](https://crates.io/crates/sr-core). It calls the GitHub REST API directly (via `ureq`) to create releases, upload assets, and check for existing releases — no external tools needed.
 
 ## Usage
 
 ```toml
 [dependencies]
-sr-github = "0.1"
+sr-github = "1"
 ```
 
 ### Creating a provider
@@ -21,7 +21,12 @@ sr-github = "0.1"
 use sr_github::GitHubProvider;
 use sr_core::release::VcsProvider;
 
-let provider = GitHubProvider::new("urmzd".into(), "semantic-release".into());
+let provider = GitHubProvider::new(
+    "urmzd".into(),
+    "semantic-release".into(),
+    "github.com".into(),
+    std::env::var("GH_TOKEN").unwrap(),
+);
 
 // Create a GitHub release
 let url = provider.create_release(
@@ -43,17 +48,18 @@ let url = provider.compare_url("v0.9.0", "v1.0.0")?;
 
 | Method | Description |
 |--------|-------------|
-| `GitHubProvider::new(owner, repo)` | Create a new provider for the given GitHub repository |
+| `GitHubProvider::new(owner, repo, hostname, token)` | Create a new provider for the given GitHub repository |
 | `create_release(tag, name, body, prerelease)` | Create a GitHub release, returns the release URL |
 | `release_exists(tag)` | Check whether a release already exists for a tag |
 | `delete_release(tag)` | Delete a release by tag |
+| `upload_assets(tag, files)` | Upload asset files to an existing release |
 | `compare_url(base, head)` | Generate a GitHub compare URL between two refs |
 | `repo_url()` | Return the repository URL (`https://github.com/owner/repo`) |
 
 ## Prerequisites
 
-Requires the [GitHub CLI (`gh`)](https://cli.github.com/) to be installed, authenticated, and available on `PATH`. The `GH_TOKEN` or `GITHUB_TOKEN` environment variable can also be used for authentication.
+Requires a `GH_TOKEN` or `GITHUB_TOKEN` environment variable with a GitHub personal access token (or the `GITHUB_TOKEN` provided by GitHub Actions). The token needs `contents: write` permission to create releases and upload assets.
 
 ## License
 
-[MIT](../../LICENSE)
+[Apache-2.0](../../LICENSE)

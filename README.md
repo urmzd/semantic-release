@@ -25,7 +25,7 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 - Semantic versioning bumps (major / minor / patch)
 - Automatic version file bumping (`Cargo.toml`, `package.json`, `pyproject.toml`)
 - Changelog generation (Jinja2 templates via `minijinja`)
-- GitHub Releases (via `gh` CLI)
+- GitHub Releases (via REST API — no external tools needed)
 - Structured JSON output for CI piping (`sr release | jq .version`)
 - Trunk-based workflow (tag + release from `main`)
 
@@ -180,45 +180,33 @@ cargo install --path crates/sr-cli
 
 ## Prerequisites
 
-`sr release` uses the [GitHub CLI (`gh`)](https://cli.github.com/) to create GitHub releases. It is pre-installed on all GitHub Actions runners. For local usage, install `gh` and authenticate:
+`sr release` calls the GitHub REST API directly — no external tools are needed. Authentication is via an environment variable:
 
 ```bash
-gh auth login
+export GH_TOKEN=ghp_xxxxxxxxxxxx   # or GITHUB_TOKEN
 ```
 
-The `gh` CLI reads the `GH_TOKEN` environment variable for authentication. The GitHub Action sets this automatically.
+The GitHub Action sets this automatically via the `github-token` input. Dry-run mode (`sr release --dry-run`) works without a token.
 
 ## GitHub Enterprise Server (GHES)
 
-`sr` works with GitHub Enterprise Server out of the box. The hostname is auto-detected from your git remote URL — changelog links and compare URLs will point to the correct host automatically.
+`sr` works with GitHub Enterprise Server out of the box. The hostname is auto-detected from your git remote URL — changelog links, compare URLs, and API calls will point to the correct host automatically.
 
 ### Setup
 
-Authenticate `gh` with your GHES instance:
+Set your `GH_TOKEN` (or `GITHUB_TOKEN`) environment variable with a token that has access to your GHES instance:
 
 ```bash
-gh auth login --hostname ghes.example.com
+export GH_TOKEN=ghp_xxxxxxxxxxxx
 ```
 
-Or set the `GH_HOST` environment variable:
-
-```bash
-export GH_HOST=ghes.example.com
-```
-
-### GitHub Actions on GHES
-
-```yaml
-- uses: urmzd/semantic-release@v1
-  env:
-    GH_HOST: ghes.example.com
-```
+No additional host configuration is needed — `sr` derives the API base URL from the git remote hostname automatically (e.g. `ghes.example.com` → `https://ghes.example.com/api/v3`).
 
 ### How it works
 
 1. `sr` reads the `origin` remote URL and extracts the hostname (e.g. `ghes.example.com`).
 2. Changelog links and compare URLs use `https://<hostname>/owner/repo/...` instead of hardcoded `github.com`.
-3. The `gh` CLI resolves the correct API endpoint via `GH_HOST` or its authenticated hostnames.
+3. REST API calls are routed to `https://<hostname>/api/v3/...` automatically.
 
 ## Quick Start
 
@@ -436,10 +424,12 @@ All other types (e.g. `chore`, `docs`, `ci`) do not trigger a release unless ove
 |-------|-------------|
 | [`sr-core`](crates/sr-core/) | Pure domain logic — traits, config, versioning, changelog |
 | [`sr-git`](crates/sr-git/) | Git implementation (native `git` CLI) |
-| [`sr-github`](crates/sr-github/) | GitHub VCS provider (`gh` CLI) |
+| [`sr-github`](crates/sr-github/) | GitHub VCS provider (REST API) |
 | [`sr-cli`](crates/sr-cli/) | CLI binary (`clap`) — wires everything together |
 
 `action.yml` in the repo root is the GitHub Action composite wrapper.
+
+`sr` uses a pluggable `VcsProvider` trait and currently ships with GitHub support. GitLab, Bitbucket, and other providers can be added as separate crates implementing the same trait.
 
 ### Core traits
 
