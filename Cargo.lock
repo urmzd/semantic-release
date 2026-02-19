@@ -758,7 +758,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "sr-cli"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -773,7 +773,7 @@ dependencies = [
 
 [[package]]
 name = "sr-core"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "glob",
@@ -790,7 +790,7 @@ dependencies = [
 
 [[package]]
 name = "sr-git"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64",
  "semver",
@@ -800,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "sr-github"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
