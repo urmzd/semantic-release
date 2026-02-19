@@ -39,11 +39,7 @@ impl GitHubProvider {
     }
 
     fn agent(&self) -> ureq::Agent {
-        ureq::Agent::new_with_config(
-            ureq::config::Config::builder()
-                .https_only(true)
-                .build(),
-        )
+        ureq::Agent::new_with_config(ureq::config::Config::builder().https_only(true).build())
     }
 
     fn get_release_by_tag(&self, tag: &str) -> Result<ReleaseResponse, ReleaseError> {
@@ -227,10 +223,7 @@ mod tests {
 
     #[test]
     fn test_api_url_ghes() {
-        assert_eq!(
-            ghes_provider().api_url(),
-            "https://ghes.example.com/api/v3"
-        );
+        assert_eq!(ghes_provider().api_url(), "https://ghes.example.com/api/v3");
     }
 
     #[test]
