@@ -31,6 +31,12 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 
 ## Installation
 
+### Shell installer (Linux/macOS)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/urmzd/semantic-release/main/install.sh | sh
+```
+
 ### GitHub Action (recommended)
 
 ```yaml
@@ -162,6 +168,7 @@ Download the latest release for your platform from
 | Linux aarch64 (musl/static) | `sr-aarch64-unknown-linux-musl` |
 | macOS x86_64 | `sr-x86_64-apple-darwin` |
 | macOS aarch64 | `sr-aarch64-apple-darwin` |
+| Windows x86_64 | `sr-x86_64-pc-windows-msvc.exe` |
 
 The MUSL variants are statically linked and work on any Linux distribution (Alpine, Debian, RHEL, etc.). Prefer these for maximum compatibility.
 
@@ -467,7 +474,7 @@ See the [Justfile](Justfile) for all available recipes.
 
 ## License
 
-[MIT](LICENSE)
+[Apache-2.0](https://opensource.org/licenses/Apache-2.0)
 
 ## Contributing
 

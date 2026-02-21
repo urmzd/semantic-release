@@ -34,6 +34,9 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-15
             cross: false
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            cross: false
     steps:
       - uses: actions/checkout@v4
 
@@ -60,12 +63,13 @@ jobs:
           else
             cargo build --release --target ${{ matrix.target }} -p sr-cli
           fi
+        shell: bash
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: sr-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/sr
+          path: target/${{ matrix.target }}/release/sr${{ contains(matrix.target, 'windows') && '.exe' || '' }}
 
   release:
     name: Release
@@ -100,9 +104,13 @@ jobs:
           mkdir -p release-assets
           for dir in artifacts/sr-*/; do
             TARGET=$(basename "$dir")
-            cp "$dir/sr" "release-assets/$TARGET"
+            if [ -f "$dir/sr.exe" ]; then
+              cp "$dir/sr.exe" "release-assets/${TARGET}.exe"
+            else
+              cp "$dir/sr" "release-assets/$TARGET"
+              chmod +x "release-assets/$TARGET"
+            fi
           done
-          chmod +x release-assets/*
 
       - name: Run sr release
         id: sr

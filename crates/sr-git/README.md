@@ -60,4 +60,4 @@ Requires `git` to be installed and available on `PATH`.
 
 ## License
 
-[MIT](../../LICENSE)
+[Apache-2.0](../../LICENSE)

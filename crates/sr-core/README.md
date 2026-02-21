@@ -99,4 +99,4 @@ if let Some(bump) = determine_bump(&commits, &classifier) {
 
 ## License
 
-[MIT](../../LICENSE)
+[Apache-2.0](../../LICENSE)
