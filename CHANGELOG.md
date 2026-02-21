@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0 (2026-02-21)
+
+### Features
+
+- add shell installer, Windows release target, and license housekeeping ([039c9fe](https://github.com/urmzd/semantic-release/commit/039c9fe3a1d45ec348cf53b27feda6af3bae8acf))
+
+### Miscellaneous
+
+- cleanup cargo.lock ([f4097bf](https://github.com/urmzd/semantic-release/commit/f4097bf5afe1c798a07773ab4e68fbb1f46e8eb7))
+
+
 ## 1.2.0 (2026-02-19)
 
 ### Features
