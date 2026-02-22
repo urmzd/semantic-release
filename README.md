@@ -472,10 +472,6 @@ just run plan      # Run the CLI
 
 See the [Justfile](Justfile) for all available recipes.
 
-## License
-
-[Apache-2.0](https://opensource.org/licenses/Apache-2.0)
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR guidelines.
