@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.4 (2026-02-25)
+
+### Bug Fixes
+
+- use env var for build-command to avoid YAML/shell expansion issues ([dd1f8fd](https://github.com/urmzd/semantic-release/commit/dd1f8fd92433dd95d8ec7d300bac4d7d477af74b))
+
+
 ## 1.4.3 (2026-02-25)
 
 ### Bug Fixes
