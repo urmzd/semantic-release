@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.2 (2026-02-25)
+
+### Bug Fixes
+
+- don't let crates.io publish failure block binary uploads ([5c0275f](https://github.com/urmzd/semantic-release/commit/5c0275ff5748a0692a919cc56afd5f2c16029ed1))
+
+
 ## 1.4.1 (2026-02-25)
 
 ### Bug Fixes
