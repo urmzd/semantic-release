@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.1 (2026-02-25)
+
+### Bug Fixes
+
+- add force re-release support to workflow dispatch ([bf0b8e3](https://github.com/urmzd/semantic-release/commit/bf0b8e33283993120ec99a1cd5324ec61ba24357))
+
+
 ## 1.4.0 (2026-02-25)
 
 ### Features
