@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Re-release the current tag (use when a previous release partially failed)"
+        type: boolean
+        default: false
 
 jobs:
   ci:
@@ -39,7 +44,7 @@ jobs:
         run: |
           set -uo pipefail
           set +e
-          JSON=$(./target/release/sr release | tail -1)
+          JSON=$(./target/release/sr release ${{ inputs.force && '--force' || '' }} | tail -1)
           RC=${PIPESTATUS[0]}
           set -e
           if [ $RC -eq 0 ]; then
