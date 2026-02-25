@@ -59,6 +59,7 @@ jobs:
 
       - name: Publish to crates.io
         if: steps.sr.outputs.released == 'true'
+        continue-on-error: true
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
