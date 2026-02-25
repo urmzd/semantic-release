@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.4.0 (2026-02-25)
+
+### Features
+
+- add build_command option and improve shell installer PATH setup ([df32798](https://github.com/urmzd/semantic-release/commit/df3279820d7065496eaeac6862240d8d515a9c78))
+
+### Bug Fixes
+
+- trigger binary builds from release workflow ([787cf1e](https://github.com/urmzd/semantic-release/commit/787cf1e89909f2b696ccf768cfbb290eb9408d0b))
+
+### Documentation
+
+- remove License section from README ([e5d24c1](https://github.com/urmzd/semantic-release/commit/e5d24c124acbb0d1f6ecd1d7531bc35c26024a54))
+
+### Miscellaneous
+
+- inline build matrix into release.yml, remove build.yml ([afc423f](https://github.com/urmzd/semantic-release/commit/afc423f4fb50e7ee97a6f7db8f9f63726265227d))
+- add sensitive paths to .gitignore ([742bc42](https://github.com/urmzd/semantic-release/commit/742bc4257510b0b5d68eeb485939f2139dd5d5b4))
+
+
 ## 1.3.0 (2026-02-21)
 
 ### Features
