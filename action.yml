@@ -114,6 +114,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
+        SR_BUILD_COMMAND: ${{ inputs.build-command }}
       run: |
         set -uo pipefail
         ARGS=()
@@ -132,11 +133,9 @@ runs:
           fi
         done
 
-        if [ -n "${{ inputs.build-command }}" ]; then
+        if [ -n "$SR_BUILD_COMMAND" ]; then
           _BUILD_SCRIPT=$(mktemp /tmp/sr-build-XXXXXX.sh)
-          cat > "$_BUILD_SCRIPT" << 'SREOF'
-${{ inputs.build-command }}
-SREOF
+          printf '%s' "$SR_BUILD_COMMAND" > "$_BUILD_SCRIPT"
           chmod +x "$_BUILD_SCRIPT"
           ARGS+=("--build-command" "bash $_BUILD_SCRIPT")
         fi
