@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.3 (2026-02-25)
+
+### Bug Fixes
+
+- write build-command to temp file to prevent outer shell expansion ([731f774](https://github.com/urmzd/semantic-release/commit/731f774e67fa916805095db13f7969e210a6aa06))
+
+### Miscellaneous
+
+- move crates.io publish to separate job so build is never blocked ([7cf95c1](https://github.com/urmzd/semantic-release/commit/7cf95c1a7a3c328e74d45cd7a574fc370570c023))
+- lock file update ([d3f3f73](https://github.com/urmzd/semantic-release/commit/d3f3f7370c22e73139522b639510513100fe5c4b))
+
+
 ## 1.4.2 (2026-02-25)
 
 ### Bug Fixes

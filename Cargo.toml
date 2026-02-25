@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "1.4.2"
+version = "1.4.3"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/urmzd/semantic-release"
@@ -12,9 +12,9 @@ homepage = "https://github.com/urmzd/semantic-release"
 
 [workspace.dependencies]
 # Internal crates
-sr-core = { path = "crates/sr-core", version = "1.4.2" }
-sr-git = { path = "crates/sr-git", version = "1.4.2" }
-sr-github = { path = "crates/sr-github", version = "1.4.2" }
+sr-core = { path = "crates/sr-core", version = "1.4.3" }
+sr-git = { path = "crates/sr-git", version = "1.4.3" }
+sr-github = { path = "crates/sr-github", version = "1.4.3" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
