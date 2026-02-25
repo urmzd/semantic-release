@@ -133,7 +133,12 @@ runs:
         done
 
         if [ -n "${{ inputs.build-command }}" ]; then
-          ARGS+=("--build-command" "${{ inputs.build-command }}")
+          _BUILD_SCRIPT=$(mktemp /tmp/sr-build-XXXXXX.sh)
+          cat > "$_BUILD_SCRIPT" << 'SREOF'
+${{ inputs.build-command }}
+SREOF
+          chmod +x "$_BUILD_SCRIPT"
+          ARGS+=("--build-command" "bash $_BUILD_SCRIPT")
         fi
 
         set +e
