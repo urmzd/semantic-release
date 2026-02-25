@@ -20,6 +20,7 @@ pub struct ReleaseConfig {
     pub version_files_strict: bool,
     pub artifacts: Vec<String>,
     pub floating_tags: bool,
+    pub build_command: Option<String>,
 }
 
 impl Default for ReleaseConfig {
@@ -36,6 +37,7 @@ impl Default for ReleaseConfig {
             version_files_strict: false,
             artifacts: vec![],
             floating_tags: false,
+            build_command: None,
         }
     }
 }

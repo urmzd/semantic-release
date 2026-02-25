@@ -229,6 +229,9 @@ where
                     }
                 }
             }
+            if let Some(ref cmd) = self.config.build_command {
+                eprintln!("[dry-run] Would run build command: {cmd}");
+            }
             eprintln!("[dry-run] Changelog:\n{changelog_body}");
             return Ok(());
         }
@@ -270,6 +273,23 @@ where
                 }
             };
             fs::write(path, new_content).map_err(|e| ReleaseError::Changelog(e.to_string()))?;
+        }
+
+        // 3.5. Run build command if configured
+        if let Some(ref cmd) = self.config.build_command {
+            eprintln!("Running build command: {cmd}");
+            let status = std::process::Command::new("sh")
+                .args(["-c", cmd])
+                .env("SR_VERSION", &version_str)
+                .env("SR_TAG", &plan.tag_name)
+                .status()
+                .map_err(|e| ReleaseError::BuildCommand(e.to_string()))?;
+            if !status.success() {
+                return Err(ReleaseError::BuildCommand(format!(
+                    "command exited with {}",
+                    status.code().unwrap_or(-1)
+                )));
+            }
         }
 
         // 4. Stage and commit changelog + version files (skip if nothing to stage)
@@ -1109,6 +1129,55 @@ mod tests {
 
         let err = s.plan().unwrap_err();
         assert!(matches!(err, ReleaseError::NoCommits { .. }));
+    }
+
+    // --- build_command tests ---
+
+    #[test]
+    fn execute_runs_build_command_after_version_bump() {
+        let dir = tempfile::tempdir().unwrap();
+        let output_file = dir.path().join("sr_test_version");
+
+        let mut config = ReleaseConfig::default();
+        config.build_command = Some(format!(
+            "echo $SR_VERSION > {}",
+            output_file.to_str().unwrap()
+        ));
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        let contents = std::fs::read_to_string(&output_file).unwrap();
+        assert_eq!(contents.trim(), "0.1.0");
+    }
+
+    #[test]
+    fn execute_build_command_failure_aborts_release() {
+        let mut config = ReleaseConfig::default();
+        config.build_command = Some("exit 1".into());
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        let result = s.execute(&plan, false);
+
+        assert!(result.is_err());
+        assert!(s.git.created_tags.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn execute_dry_run_skips_build_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let output_file = dir.path().join("sr_test_should_not_exist");
+
+        let mut config = ReleaseConfig::default();
+        config.build_command = Some(format!("echo test > {}", output_file.to_str().unwrap()));
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, true).unwrap();
+
+        assert!(!output_file.exists());
     }
 
     #[test]

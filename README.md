@@ -37,6 +37,8 @@ The npm `semantic-release` ecosystem is battle-tested but comes with friction:
 curl -fsSL https://raw.githubusercontent.com/urmzd/semantic-release/main/install.sh | sh
 ```
 
+The installer automatically adds `~/.local/bin` to your `PATH` in your shell profile (`.zshrc`, `.bashrc`, or `config.fish`).
+
 ### GitHub Action (recommended)
 
 ```yaml
@@ -101,6 +103,16 @@ Upload artifacts to the release:
 
 The `artifacts` input accepts glob patterns (newline or comma separated). All matching files are uploaded to the GitHub release. This keeps artifact handling self-contained in the action — no separate upload steps needed.
 
+Run a build step between version bump and commit (useful for lock files, codegen, etc.):
+
+```yaml
+      - uses: urmzd/semantic-release@v1
+        with:
+          build-command: "cargo build --release"
+```
+
+The command runs with `SR_VERSION` and `SR_TAG` environment variables set, so you can reference the new version in your build scripts.
+
 Manual re-trigger with `workflow_dispatch` (useful when a previous release partially failed):
 
 ```yaml
@@ -141,6 +153,7 @@ jobs:
 | `git-user-name` | Git user name for tag creation | `semantic-release[bot]` |
 | `git-user-email` | Git user email for tag creation | `semantic-release[bot]@urmzd.com` |
 | `artifacts` | Glob patterns for artifact files to upload (newline or comma separated) | `""` |
+| `build-command` | Shell command to run after version bump, before commit (`SR_VERSION` and `SR_TAG` env vars available) | `""` |
 
 #### Outputs
 
@@ -273,6 +286,7 @@ commit (hook validates) → push → sr plan (preview) → sr release (execute)
 3. **Dry-run** — run `sr release --dry-run` to simulate the full release without side effects (no tags created).
 4. **Release** — run `sr release` to execute the full pipeline:
    - Bumps version in configured manifest files
+   - Runs `build_command` if configured (with `SR_VERSION` and `SR_TAG` env vars)
    - Generates and commits the changelog (with version files)
    - Creates and pushes the git tag
    - Creates a GitHub release
@@ -348,6 +362,7 @@ All diagnostic messages go to stderr, so stdout is always clean JSON (or empty o
 
 - `sr release --dry-run` — preview without making changes
 - `sr release --force` — re-release the current tag (for partial failure recovery)
+- `sr release --build-command 'npm run build'` — run a command after version bump, before commit
 - `sr plan --format json` — machine-readable output
 - `sr changelog --write` — write changelog to disk
 - `sr version --short` — print only the version number
@@ -398,6 +413,11 @@ version_files:
   - Cargo.toml
   # - package.json
   # - pyproject.toml
+
+# Shell command to run after version bump, before commit
+# SR_VERSION and SR_TAG env vars are available
+build_command: null
+# Example: "cargo build --release"
 
 # Override commit-type to bump-level mapping (merged with defaults)
 commit_types: {}

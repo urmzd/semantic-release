@@ -39,6 +39,10 @@ inputs:
     description: "Glob patterns for artifact files to upload (newline or comma separated)"
     required: false
     default: ""
+  build-command:
+    description: "Shell command to run after version bump, before commit (SR_VERSION and SR_TAG env vars available)"
+    required: false
+    default: ""
 
 outputs:
   version:
@@ -127,6 +131,10 @@ runs:
             ARGS+=("--artifacts" "$trimmed")
           fi
         done
+
+        if [ -n "${{ inputs.build-command }}" ]; then
+          ARGS+=("--build-command" "${{ inputs.build-command }}")
+        fi
 
         set +e
         JSON_OUTPUT=$(sr "${ARGS[@]}" | tail -1)

@@ -25,6 +25,9 @@ pub enum ReleaseError {
     #[error("version file error: {0}")]
     VersionBump(String),
 
+    #[error("build command failed: {0}")]
+    BuildCommand(String),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

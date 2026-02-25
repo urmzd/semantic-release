@@ -34,6 +34,10 @@ enum Commands {
         /// Re-release the current tag (use when a previous release partially failed)
         #[arg(long)]
         force: bool,
+
+        /// Shell command to run after version bump, before commit (SR_VERSION and SR_TAG env vars available)
+        #[arg(long)]
+        build_command: Option<String>,
     },
 
     /// Show what the next release would look like
@@ -457,9 +461,13 @@ fn run() -> anyhow::Result<()> {
             dry_run,
             artifacts,
             force,
+            build_command,
         } => {
             let mut config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
             config.artifacts.extend(artifacts);
+            if build_command.is_some() {
+                config.build_command = build_command;
+            }
 
             // Try to build with GitHub; fall back to local-only if no token
             let plan = match build_full_strategy(config.clone(), force) {
