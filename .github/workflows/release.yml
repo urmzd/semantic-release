@@ -57,9 +57,22 @@ jobs:
             exit $RC
           fi
 
+    outputs:
+      released: ${{ steps.sr.outputs.released }}
+      tag: v${{ steps.sr.outputs.version }}
+
+  publish:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: Publish to crates.io
-        if: steps.sr.outputs.released == 'true'
-        continue-on-error: true
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
@@ -69,10 +82,6 @@ jobs:
           cargo publish -p sr-github --allow-dirty
           sleep 30
           cargo publish -p sr-cli --allow-dirty
-
-    outputs:
-      released: ${{ steps.sr.outputs.released }}
-      tag: v${{ steps.sr.outputs.version }}
 
   build:
     needs: release
