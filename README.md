@@ -363,6 +363,9 @@ All diagnostic messages go to stderr, so stdout is always clean JSON (or empty o
 - `sr release --dry-run` — preview without making changes
 - `sr release --force` — re-release the current tag (for partial failure recovery)
 - `sr release --build-command 'npm run build'` — run a command after version bump, before commit
+- `sr release --stage-files Cargo.lock` — stage additional files after build (repeatable)
+- `sr release --pre-release-command 'cargo test'` — run a command before the release starts
+- `sr release --post-release-command './notify.sh'` — run a command after the release completes
 - `sr plan --format json` — machine-readable output
 - `sr changelog --write` — write changelog to disk
 - `sr version --short` — print only the version number
@@ -411,6 +414,10 @@ Force mode will error if:
 | `artifacts` | `string[]` | `[]` | Glob patterns for files to upload to the GitHub release |
 | `floating_tags` | `bool` | `false` | Create floating major version tags (e.g. `v3` always points to the latest `v3.x.x` release) |
 | `build_command` | `string?` | `null` | Shell command to run after version bump but before commit. `SR_VERSION` and `SR_TAG` env vars are set |
+| `stage_files` | `string[]` | `[]` | Additional file globs to stage after `build_command` runs (e.g. `["Cargo.lock"]`) |
+| `pre_release_command` | `string?` | `null` | Shell command to run before the release starts (validation, checks). `SR_VERSION` and `SR_TAG` env vars are set |
+| `post_release_command` | `string?` | `null` | Shell command to run after the release completes (notifications, deployments). `SR_VERSION` and `SR_TAG` env vars are set |
+| `changelog.template` | `string?` | `null` | Custom [minijinja](https://docs.rs/minijinja) template for changelog rendering. See template variables below |
 
 ### Example config
 
@@ -461,8 +468,25 @@ floating_tags: false
 
 build_command: "cargo build --release"
 
+# Additional files to stage after build_command (e.g. lock files, codegen output)
+stage_files:
+  - Cargo.lock
+
+# Hook commands (SR_VERSION and SR_TAG env vars available)
+pre_release_command: "cargo test"
+post_release_command: "echo Released $SR_VERSION"
+
 artifacts:
   - "dist/*.tar.gz"
+
+# Custom changelog template (minijinja/Jinja2 syntax, optional)
+# changelog:
+#   template: |
+#     {% for entry in entries %}
+#     ## {{ entry.version }} ({{ entry.date }})
+#     {% for c in entry.commits %}- {{ c.description }}
+#     {% endfor %}
+#     {% endfor %}
 ```
 
 ### Supported version files
@@ -482,8 +506,8 @@ artifacts:
 | Variable | Context | Description |
 |----------|---------|-------------|
 | `GH_TOKEN` / `GITHUB_TOKEN` | Release | GitHub API token for creating releases and uploading artifacts. Not needed for `--dry-run` |
-| `SR_VERSION` | Build command | The new version string (e.g. `1.2.3`), set automatically when `build_command` runs |
-| `SR_TAG` | Build command | The new tag name (e.g. `v1.2.3`), set automatically when `build_command` runs |
+| `SR_VERSION` | All hooks | The new version string (e.g. `1.2.3`), set for `pre_release_command`, `build_command`, and `post_release_command` |
+| `SR_TAG` | All hooks | The new tag name (e.g. `v1.2.3`), set for `pre_release_command`, `build_command`, and `post_release_command` |
 
 ### Commit types
 
@@ -541,27 +565,63 @@ When `changelog.file` is set:
 - Sections appear in order: Breaking Changes, then type sections in definition order, then Miscellaneous
 - Commits link to their full SHA on GitHub when the repo URL is available
 
+### Changelog templates
+
+Set `changelog.template` to a [minijinja](https://docs.rs/minijinja) (Jinja2-compatible) template string for full control over changelog output. When set, the default markdown format is bypassed entirely.
+
+**Template context:**
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `entries` | `ChangelogEntry[]` | Array of release entries (newest first for `--regenerate`) |
+| `entries[].version` | `string` | Version string (e.g. `1.2.3`) |
+| `entries[].date` | `string` | Release date (`YYYY-MM-DD`) |
+| `entries[].commits` | `ConventionalCommit[]` | Array of commits in this release |
+| `entries[].compare_url` | `string?` | GitHub compare URL (may be null) |
+| `entries[].repo_url` | `string?` | Repository URL (may be null) |
+| `entries[].commits[].sha` | `string` | Full commit SHA |
+| `entries[].commits[].type` | `string` | Commit type (e.g. `feat`, `fix`) |
+| `entries[].commits[].scope` | `string?` | Commit scope (may be null) |
+| `entries[].commits[].description` | `string` | Commit description |
+| `entries[].commits[].body` | `string?` | Commit body (may be null) |
+| `entries[].commits[].breaking` | `bool` | Whether this is a breaking change |
+
+**Example template:**
+
+```yaml
+changelog:
+  file: CHANGELOG.md
+  template: |
+    {% for entry in entries %}
+    ## {{ entry.version }} ({{ entry.date }})
+    {% for c in entry.commits %}
+    - {% if c.scope %}**{{ c.scope }}**: {% endif %}{{ c.description }}
+    {% endfor %}
+    {% endfor %}
+```
+
 ### Release execution order
 
-Understanding the execution order helps when configuring `build_command`:
+Understanding the execution order helps when configuring hooks:
 
-1. **Bump version files** — all configured `version_files` are updated on disk
-2. **Write changelog** — the changelog file is written (if configured)
-3. **Run build command** — your `build_command` runs with `SR_VERSION`/`SR_TAG` set. The version files already contain the new version, so tools like `cargo build` will pick it up
-4. **Git commit** — version files + changelog are staged and committed as `chore(release): <tag> [skip ci]`
-5. **Create and push tag**
-6. **Create/update floating tag** (if `floating_tags: true`)
-7. **Create GitHub release**
-8. **Upload artifacts**
+1. **Pre-release command** — `pre_release_command` runs first (validation, checks)
+2. **Bump version files** — all configured `version_files` are updated on disk
+3. **Write changelog** — the changelog file is written (if configured)
+4. **Run build command** — `build_command` runs with `SR_VERSION`/`SR_TAG` set. Version files already contain the new version
+5. **Git commit** — version files + changelog + `stage_files` are staged and committed as `chore(release): <tag> [skip ci]`
+6. **Create and push tag**
+7. **Create/update floating tag** (if `floating_tags: true`)
+8. **Create GitHub release**
+9. **Upload artifacts**
+10. **Post-release command** — `post_release_command` runs last (notifications, deployments)
 
-If any step fails, execution stops. Steps 5-8 are idempotent — re-running with `--force` will skip already-completed steps.
+If any step in 1-4 fails, modified files are automatically rolled back to their original contents. Steps 6-9 are idempotent — re-running with `--force` will skip already-completed steps.
 
 ### Limitations
 
 - **Single branch only** — no release branches or multi-branch workflows
 - **No pre-releases** — no support for alpha/beta/rc tags
 - **GitHub only** — the `VcsProvider` trait exists for extensibility, but only GitHub is implemented
-- **No custom hooks beyond `build_command`** — use CI pipeline steps for pre/post-release actions
 
 ## Architecture
 

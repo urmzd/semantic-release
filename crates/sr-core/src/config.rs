@@ -21,6 +21,12 @@ pub struct ReleaseConfig {
     pub artifacts: Vec<String>,
     pub floating_tags: bool,
     pub build_command: Option<String>,
+    /// Additional files/globs to stage after `build_command` runs (e.g. `Cargo.lock`).
+    pub stage_files: Vec<String>,
+    /// Shell command to run before the release starts (validation, checks).
+    pub pre_release_command: Option<String>,
+    /// Shell command to run after the release completes (notifications, deployments).
+    pub post_release_command: Option<String>,
 }
 
 impl Default for ReleaseConfig {
@@ -38,6 +44,9 @@ impl Default for ReleaseConfig {
             artifacts: vec![],
             floating_tags: false,
             build_command: None,
+            stage_files: vec![],
+            pre_release_command: None,
+            post_release_command: None,
         }
     }
 }

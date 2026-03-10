@@ -180,8 +180,13 @@ where
     }
 
     fn execute(&self, plan: &ReleasePlan, dry_run: bool) -> Result<(), ReleaseError> {
+        let version_str = plan.next_version.to_string();
+
         if dry_run {
             let changelog_body = self.format_changelog(plan)?;
+            if let Some(ref cmd) = self.config.pre_release_command {
+                eprintln!("[dry-run] Would run pre-release command: {cmd}");
+            }
             eprintln!("[dry-run] Would create tag: {}", plan.tag_name);
             eprintln!("[dry-run] Would push tag: {}", plan.tag_name);
             if let Some(ref floating) = plan.floating_tag_name {
@@ -232,78 +237,80 @@ where
             if let Some(ref cmd) = self.config.build_command {
                 eprintln!("[dry-run] Would run build command: {cmd}");
             }
+            if !self.config.stage_files.is_empty() {
+                eprintln!(
+                    "[dry-run] Would stage additional files: {}",
+                    self.config.stage_files.join(", ")
+                );
+            }
+            if let Some(ref cmd) = self.config.post_release_command {
+                eprintln!("[dry-run] Would run post-release command: {cmd}");
+            }
             eprintln!("[dry-run] Changelog:\n{changelog_body}");
             return Ok(());
+        }
+
+        // 0. Run pre-release command if configured
+        if let Some(ref cmd) = self.config.pre_release_command {
+            eprintln!("Running pre-release command: {cmd}");
+            run_hook(cmd, &version_str, &plan.tag_name, "pre_release_command")?;
         }
 
         // 1. Format changelog
         let changelog_body = self.format_changelog(plan)?;
 
-        // 2. Bump version files
-        let version_str = plan.next_version.to_string();
-        let mut bumped_files: Vec<&str> = Vec::new();
+        // 2. Snapshot files before mutation (for rollback on failure)
+        let mut file_snapshots: Vec<(String, Option<String>)> = Vec::new();
         for file in &self.config.version_files {
-            match bump_version_file(Path::new(file), &version_str) {
-                Ok(()) => bumped_files.push(file.as_str()),
-                Err(e) if !self.config.version_files_strict => {
-                    eprintln!("warning: {e} — skipping {file}");
-                }
-                Err(e) => return Err(e),
-            }
+            let path = Path::new(file);
+            let contents = if path.exists() {
+                Some(
+                    fs::read_to_string(path)
+                        .map_err(|e| ReleaseError::VersionBump(e.to_string()))?,
+                )
+            } else {
+                None
+            };
+            file_snapshots.push((file.clone(), contents));
         }
-
-        // 3. Write changelog file if configured
         if let Some(ref changelog_file) = self.config.changelog.file {
             let path = Path::new(changelog_file);
-            let existing = if path.exists() {
-                fs::read_to_string(path).map_err(|e| ReleaseError::Changelog(e.to_string()))?
+            let contents = if path.exists() {
+                Some(fs::read_to_string(path).map_err(|e| ReleaseError::Changelog(e.to_string()))?)
             } else {
-                String::new()
+                None
             };
-            let new_content = if existing.is_empty() {
-                format!("# Changelog\n\n{changelog_body}\n")
-            } else {
-                // Insert after the first heading line
-                match existing.find("\n\n") {
-                    Some(pos) => {
-                        let (header, rest) = existing.split_at(pos);
-                        format!("{header}\n\n{changelog_body}\n{rest}")
-                    }
-                    None => format!("{existing}\n\n{changelog_body}\n"),
+            file_snapshots.push((changelog_file.clone(), contents));
+        }
+
+        // Run the mutable pre-commit steps with rollback on failure
+        let bumped_files =
+            match self.execute_pre_commit(plan, &version_str, &changelog_body, &file_snapshots) {
+                Ok(files) => files,
+                Err(e) => {
+                    eprintln!("error during pre-commit steps, restoring files...");
+                    restore_snapshots(&file_snapshots);
+                    return Err(e);
                 }
             };
-            fs::write(path, new_content).map_err(|e| ReleaseError::Changelog(e.to_string()))?;
-        }
 
-        // 3.5. Run build command if configured
-        if let Some(ref cmd) = self.config.build_command {
-            eprintln!("Running build command: {cmd}");
-            let status = std::process::Command::new("sh")
-                .args(["-c", cmd])
-                .env("SR_VERSION", &version_str)
-                .env("SR_TAG", &plan.tag_name)
-                .status()
-                .map_err(|e| ReleaseError::BuildCommand(e.to_string()))?;
-            if !status.success() {
-                return Err(ReleaseError::BuildCommand(format!(
-                    "command exited with {}",
-                    status.code().unwrap_or(-1)
-                )));
-            }
-        }
-
-        // 4. Stage and commit changelog + version files (skip if nothing to stage)
+        // 4. Resolve stage_files globs and collect all paths to stage
         {
-            let mut paths_to_stage: Vec<&str> = Vec::new();
+            let mut paths_to_stage: Vec<String> = Vec::new();
             if let Some(ref changelog_file) = self.config.changelog.file {
-                paths_to_stage.push(changelog_file.as_str());
+                paths_to_stage.push(changelog_file.clone());
             }
             for file in &bumped_files {
-                paths_to_stage.push(*file);
+                paths_to_stage.push(file.clone());
+            }
+            if !self.config.stage_files.is_empty() {
+                let extra = resolve_glob_patterns(&self.config.stage_files)?;
+                paths_to_stage.extend(extra);
             }
             if !paths_to_stage.is_empty() {
+                let refs: Vec<&str> = paths_to_stage.iter().map(|s| s.as_str()).collect();
                 let commit_msg = format!("chore(release): {} [skip ci]", plan.tag_name);
-                self.git.stage_and_commit(&paths_to_stage, &commit_msg)?;
+                self.git.stage_and_commit(&refs, &commit_msg)?;
             }
         }
 
@@ -353,9 +360,135 @@ where
             }
         }
 
+        // 11. Run post-release command if configured
+        if let Some(ref cmd) = self.config.post_release_command {
+            eprintln!("Running post-release command: {cmd}");
+            run_hook(cmd, &version_str, &plan.tag_name, "post_release_command")?;
+        }
+
         eprintln!("Released {}", plan.tag_name);
         Ok(())
     }
+}
+
+impl<G, V, C, F> TrunkReleaseStrategy<G, V, C, F>
+where
+    G: GitRepository,
+    V: VcsProvider,
+    C: CommitParser,
+    F: ChangelogFormatter,
+{
+    /// Execute the mutable pre-commit steps: bump version files, write changelog, run build command.
+    /// Returns the list of bumped files on success. On error the caller restores snapshots.
+    fn execute_pre_commit(
+        &self,
+        plan: &ReleasePlan,
+        version_str: &str,
+        changelog_body: &str,
+        _snapshots: &[(String, Option<String>)],
+    ) -> Result<Vec<String>, ReleaseError> {
+        // 2. Bump version files
+        let mut bumped_files: Vec<String> = Vec::new();
+        for file in &self.config.version_files {
+            match bump_version_file(Path::new(file), version_str) {
+                Ok(()) => bumped_files.push(file.clone()),
+                Err(e) if !self.config.version_files_strict => {
+                    eprintln!("warning: {e} — skipping {file}");
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        // 3. Write changelog file if configured
+        if let Some(ref changelog_file) = self.config.changelog.file {
+            let path = Path::new(changelog_file);
+            let existing = if path.exists() {
+                fs::read_to_string(path).map_err(|e| ReleaseError::Changelog(e.to_string()))?
+            } else {
+                String::new()
+            };
+            let new_content = if existing.is_empty() {
+                format!("# Changelog\n\n{changelog_body}\n")
+            } else {
+                match existing.find("\n\n") {
+                    Some(pos) => {
+                        let (header, rest) = existing.split_at(pos);
+                        format!("{header}\n\n{changelog_body}\n{rest}")
+                    }
+                    None => format!("{existing}\n\n{changelog_body}\n"),
+                }
+            };
+            fs::write(path, new_content).map_err(|e| ReleaseError::Changelog(e.to_string()))?;
+        }
+
+        // 3.5. Run build command if configured
+        if let Some(ref cmd) = self.config.build_command {
+            eprintln!("Running build command: {cmd}");
+            run_hook(cmd, version_str, &plan.tag_name, "build_command")?;
+        }
+
+        Ok(bumped_files)
+    }
+}
+
+/// Restore file contents from snapshots (best-effort, used during rollback).
+fn restore_snapshots(snapshots: &[(String, Option<String>)]) {
+    for (file, contents) in snapshots {
+        let path = Path::new(file);
+        match contents {
+            Some(data) => {
+                if let Err(e) = fs::write(path, data) {
+                    eprintln!("warning: failed to restore {file}: {e}");
+                }
+            }
+            None => {
+                // File didn't exist before — remove it
+                if path.exists()
+                    && let Err(e) = fs::remove_file(path)
+                {
+                    eprintln!("warning: failed to remove {file}: {e}");
+                }
+            }
+        }
+    }
+}
+
+/// Run a shell hook command with SR_VERSION and SR_TAG env vars.
+fn run_hook(cmd: &str, version: &str, tag: &str, label: &str) -> Result<(), ReleaseError> {
+    let status = std::process::Command::new("sh")
+        .args(["-c", cmd])
+        .env("SR_VERSION", version)
+        .env("SR_TAG", tag)
+        .status()
+        .map_err(|e| ReleaseError::BuildCommand(format!("{label}: {e}")))?;
+    if !status.success() {
+        return Err(ReleaseError::BuildCommand(format!(
+            "{label} exited with {}",
+            status.code().unwrap_or(-1)
+        )));
+    }
+    Ok(())
+}
+
+/// Resolve glob patterns into a list of file paths.
+fn resolve_glob_patterns(patterns: &[String]) -> Result<Vec<String>, ReleaseError> {
+    let mut files = Vec::new();
+    for pattern in patterns {
+        let paths = glob::glob(pattern)
+            .map_err(|e| ReleaseError::Config(format!("invalid glob pattern '{pattern}': {e}")))?;
+        for entry in paths {
+            match entry {
+                Ok(path) if path.is_file() => {
+                    files.push(path.to_string_lossy().into_owned());
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("warning: glob error: {e}");
+                }
+            }
+        }
+    }
+    Ok(files)
 }
 
 fn resolve_artifact_globs(patterns: &[String]) -> Result<Vec<String>, ReleaseError> {
@@ -1187,5 +1320,166 @@ mod tests {
 
         let err = s.plan().unwrap_err();
         assert!(matches!(err, ReleaseError::NoCommits { .. }));
+    }
+
+    // --- stage_files tests ---
+
+    #[test]
+    fn execute_stages_extra_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock_file = dir.path().join("Cargo.lock");
+        std::fs::write(&lock_file, "old lock").unwrap();
+
+        let mut config = ReleaseConfig::default();
+        config.build_command = Some(format!("echo 'new lock' > {}", lock_file.to_str().unwrap()));
+        config.stage_files = vec![lock_file.to_str().unwrap().to_string()];
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        let committed = s.git.committed.lock().unwrap();
+        assert!(!committed.is_empty());
+        let (staged, _) = &committed[0];
+        assert!(
+            staged.iter().any(|f| f.contains("Cargo.lock")),
+            "Cargo.lock should be staged, got: {staged:?}"
+        );
+    }
+
+    #[test]
+    fn execute_dry_run_shows_stage_files() {
+        let mut config = ReleaseConfig::default();
+        config.stage_files = vec!["Cargo.lock".into()];
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        // dry-run should not error
+        s.execute(&plan, true).unwrap();
+    }
+
+    // --- rollback tests ---
+
+    #[test]
+    fn execute_build_failure_restores_version_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let cargo_toml = dir.path().join("Cargo.toml");
+        std::fs::write(
+            &cargo_toml,
+            "[package]\nname = \"test\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+
+        let mut config = ReleaseConfig::default();
+        config.version_files = vec![cargo_toml.to_str().unwrap().to_string()];
+        config.build_command = Some("exit 1".into());
+
+        let tag = TagInfo {
+            name: "v1.0.0".into(),
+            version: Version::new(1, 0, 0),
+            sha: "d".repeat(40),
+        };
+        let s = make_strategy(vec![tag], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        let result = s.execute(&plan, false);
+
+        assert!(result.is_err());
+        // Version file should be restored to original contents
+        let contents = std::fs::read_to_string(&cargo_toml).unwrap();
+        assert!(
+            contents.contains("version = \"1.0.0\""),
+            "version should be restored, got: {contents}"
+        );
+    }
+
+    // --- pre/post release hook tests ---
+
+    #[test]
+    fn execute_pre_release_command_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("pre_release_ran");
+
+        let mut config = ReleaseConfig::default();
+        config.pre_release_command = Some(format!("touch {}", marker.to_str().unwrap()));
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        assert!(marker.exists(), "pre-release command should have run");
+    }
+
+    #[test]
+    fn execute_post_release_command_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("post_release_ran");
+
+        let mut config = ReleaseConfig::default();
+        config.post_release_command = Some(format!("touch {}", marker.to_str().unwrap()));
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        assert!(marker.exists(), "post-release command should have run");
+    }
+
+    #[test]
+    fn execute_pre_release_failure_aborts_release() {
+        let mut config = ReleaseConfig::default();
+        config.pre_release_command = Some("exit 1".into());
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        let result = s.execute(&plan, false);
+
+        assert!(result.is_err());
+        // Nothing should have been committed or tagged
+        assert!(s.git.created_tags.lock().unwrap().is_empty());
+        assert!(s.git.committed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn execute_hooks_receive_version_env_vars() {
+        let dir = tempfile::tempdir().unwrap();
+        let output_file = dir.path().join("hook_output");
+
+        let mut config = ReleaseConfig::default();
+        config.post_release_command = Some(format!(
+            "echo $SR_VERSION $SR_TAG > {}",
+            output_file.to_str().unwrap()
+        ));
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, false).unwrap();
+
+        let contents = std::fs::read_to_string(&output_file).unwrap();
+        assert!(contents.contains("0.1.0"), "SR_VERSION should be set");
+        assert!(contents.contains("v0.1.0"), "SR_TAG should be set");
+    }
+
+    #[test]
+    fn execute_dry_run_skips_hooks() {
+        let dir = tempfile::tempdir().unwrap();
+        let pre_marker = dir.path().join("pre_hook");
+        let post_marker = dir.path().join("post_hook");
+
+        let mut config = ReleaseConfig::default();
+        config.pre_release_command = Some(format!("touch {}", pre_marker.to_str().unwrap()));
+        config.post_release_command = Some(format!("touch {}", post_marker.to_str().unwrap()));
+
+        let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
+        let plan = s.plan().unwrap();
+        s.execute(&plan, true).unwrap();
+
+        assert!(
+            !pre_marker.exists(),
+            "pre-release hook should not run in dry-run"
+        );
+        assert!(
+            !post_marker.exists(),
+            "post-release hook should not run in dry-run"
+        );
     }
 }

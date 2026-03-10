@@ -38,6 +38,18 @@ enum Commands {
         /// Shell command to run after version bump, before commit (SR_VERSION and SR_TAG env vars available)
         #[arg(long)]
         build_command: Option<String>,
+
+        /// Additional file globs to stage after build command (repeatable, e.g. Cargo.lock)
+        #[arg(long = "stage-files")]
+        stage_files: Vec<String>,
+
+        /// Shell command to run before the release starts
+        #[arg(long)]
+        pre_release_command: Option<String>,
+
+        /// Shell command to run after the release completes
+        #[arg(long)]
+        post_release_command: Option<String>,
     },
 
     /// Show what the next release would look like
@@ -462,11 +474,21 @@ fn run() -> anyhow::Result<()> {
             artifacts,
             force,
             build_command,
+            stage_files,
+            pre_release_command,
+            post_release_command,
         } => {
             let mut config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
             config.artifacts.extend(artifacts);
+            config.stage_files.extend(stage_files);
             if build_command.is_some() {
                 config.build_command = build_command;
+            }
+            if pre_release_command.is_some() {
+                config.pre_release_command = pre_release_command;
+            }
+            if post_release_command.is_some() {
+                config.post_release_command = post_release_command;
             }
 
             // Try to build with GitHub; fall back to local-only if no token

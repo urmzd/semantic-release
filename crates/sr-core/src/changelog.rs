@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::Serialize;
+
 use crate::commit::{CommitType, ConventionalCommit};
 use crate::error::ReleaseError;
 
 /// A single changelog entry representing a release.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ChangelogEntry {
     pub version: String,
     pub date: String,
@@ -19,8 +21,9 @@ pub trait ChangelogFormatter: Send + Sync {
 }
 
 /// Default formatter that produces simple markdown output.
+/// When a custom template is provided, renders using minijinja.
 pub struct DefaultChangelogFormatter {
-    _template: Option<String>,
+    template: Option<String>,
     types: Vec<CommitType>,
     breaking_section: String,
     misc_section: String,
@@ -34,7 +37,7 @@ impl DefaultChangelogFormatter {
         misc_section: String,
     ) -> Self {
         Self {
-            _template: template,
+            template,
             types,
             breaking_section,
             misc_section,
@@ -44,6 +47,10 @@ impl DefaultChangelogFormatter {
 
 impl ChangelogFormatter for DefaultChangelogFormatter {
     fn format(&self, entries: &[ChangelogEntry]) -> Result<String, ReleaseError> {
+        if let Some(ref template_str) = self.template {
+            return render_template(template_str, entries);
+        }
+
         let mut output = String::new();
 
         // Build ordered list of unique sections, preserving definition order.
@@ -120,6 +127,19 @@ impl ChangelogFormatter for DefaultChangelogFormatter {
 
         Ok(output.trim_end().to_string())
     }
+}
+
+fn render_template(template_str: &str, entries: &[ChangelogEntry]) -> Result<String, ReleaseError> {
+    let mut env = minijinja::Environment::new();
+    env.add_template("changelog", template_str)
+        .map_err(|e| ReleaseError::Changelog(format!("invalid template: {e}")))?;
+    let tmpl = env
+        .get_template("changelog")
+        .map_err(|e| ReleaseError::Changelog(format!("template error: {e}")))?;
+    let output = tmpl
+        .render(minijinja::context! { entries => entries })
+        .map_err(|e| ReleaseError::Changelog(format!("template render error: {e}")))?;
+    Ok(output.trim_end().to_string())
 }
 
 fn format_commit_line(output: &mut String, commit: &ConventionalCommit, repo_url: Option<&str>) {
@@ -316,5 +336,82 @@ mod tests {
         assert!(out.contains("### Documentation"));
         assert!(out.contains("### Refactoring"));
         assert!(out.contains("### Reverts"));
+    }
+
+    #[test]
+    fn custom_template_renders() {
+        let template = r#"{% for entry in entries %}Release {{ entry.version }}
+{% for c in entry.commits %}- {{ c.description }}
+{% endfor %}{% endfor %}"#;
+        let formatter = DefaultChangelogFormatter::new(
+            Some(template.into()),
+            default_commit_types(),
+            "Breaking Changes".into(),
+            "Miscellaneous".into(),
+        );
+        let out = formatter
+            .format(&[entry(
+                vec![
+                    make_commit("feat", "add button", None, false),
+                    make_commit("fix", "null check", None, false),
+                ],
+                None,
+            )])
+            .unwrap();
+        assert!(out.contains("Release 1.0.0"));
+        assert!(out.contains("- add button"));
+        assert!(out.contains("- null check"));
+        // Should NOT contain default markdown headings
+        assert!(!out.contains("### Features"));
+    }
+
+    #[test]
+    fn custom_template_access_all_fields() {
+        let template = r#"{% for entry in entries %}## {{ entry.version }} ({{ entry.date }})
+{% for c in entry.commits %}{{ c.type }}{% if c.scope %}({{ c.scope }}){% endif %}{% if c.breaking %}!{% endif %}: {{ c.description }} ({{ c.sha }})
+{% endfor %}{% endfor %}"#;
+        let formatter = DefaultChangelogFormatter::new(
+            Some(template.into()),
+            default_commit_types(),
+            "Breaking Changes".into(),
+            "Miscellaneous".into(),
+        );
+        let out = formatter
+            .format(&[entry(
+                vec![
+                    make_commit("feat", "add flag", Some("cli"), false),
+                    make_commit("fix", "crash", None, true),
+                ],
+                None,
+            )])
+            .unwrap();
+        assert!(out.contains("feat(cli): add flag"));
+        assert!(out.contains("fix!: crash"));
+        assert!(out.contains("(abc1234def5678)"));
+    }
+
+    #[test]
+    fn invalid_template_returns_error() {
+        let template = "{% invalid %}";
+        let formatter = DefaultChangelogFormatter::new(
+            Some(template.into()),
+            default_commit_types(),
+            "Breaking Changes".into(),
+            "Miscellaneous".into(),
+        );
+        let result = formatter.format(&[entry(vec![], None)]);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("template"));
+    }
+
+    #[test]
+    fn none_template_uses_default_format() {
+        // Verify that None template produces the same output as before
+        let commits = vec![make_commit("feat", "add button", None, false)];
+        let out = format(&[entry(commits, None)]);
+        assert!(out.contains("## 1.0.0"));
+        assert!(out.contains("### Features"));
+        assert!(out.contains("- add button"));
     }
 }
