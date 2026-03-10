@@ -688,6 +688,18 @@ just run plan      # Run the CLI
 
 See the [Justfile](Justfile) for all available recipes.
 
+## Agent Skill
+
+This project ships an [Agent Skill](https://github.com/vercel-labs/skills) for use with Claude Code, Cursor, and other compatible agents.
+
+**Install:**
+
+```sh
+npx skills add urmzd/semantic-release
+```
+
+Once installed, use `/semantic-release` to plan, dry-run, or execute releases from conventional commits.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR guidelines.
