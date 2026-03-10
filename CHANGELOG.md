@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.1 (2026-03-10)
+
+### Bug Fixes
+
+- add Cargo.lock to stage_files and sync with v1.5.0 ([5463b67](https://github.com/urmzd/semantic-release/commit/5463b67d9178c311099cc76db7b2e71e8c61138d))
+
+### Documentation
+
+- remove incorrect single-branch limitation ([36d18a8](https://github.com/urmzd/semantic-release/commit/36d18a82b9bbf4729262657a8f5d5820af854e0c))
+
+
 ## 1.5.0 (2026-03-10)
 
 ### Features
