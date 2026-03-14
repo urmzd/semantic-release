@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.0 (2026-03-14)
+
+### Features
+
+- allow --force to create patch release when no releasable commits exist ([4968d8b](https://github.com/urmzd/semantic-release/commit/4968d8b8a26f3b282124f1a30b462dce50e29dde))
+
+[Full Changelog](https://github.com/urmzd/semantic-release/compare/v1.6.1...v1.7.0)
+
+
 ## 1.6.1 (2026-03-14)
 
 ### Bug Fixes
