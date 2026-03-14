@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.1 (2026-03-14)
+
+### Bug Fixes
+
+- remove target_commitish from release payload to avoid GitHub 422 error ([973ea38](https://github.com/urmzd/semantic-release/commit/973ea38b115d5174d13c3a5caf4c18d4d3aa2706))
+
+[Full Changelog](https://github.com/urmzd/semantic-release/compare/v1.6.0...v1.6.1)
+
+
 ## 1.6.0 (2026-03-14)
 
 ### Features
