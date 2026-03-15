@@ -152,7 +152,7 @@ jobs:
 | `command` | The `sr` subcommand to run (`release`, `plan`, `changelog`, `version`, `config`, `completions`) | `release` |
 | `dry-run` | Preview changes without executing them | `false` |
 | `force` | Re-release the current tag (use when a previous release partially failed) | `false` |
-| `config` | Path to the config file | `.urmzd.sr.yml` |
+| `config` | Path to the config file | `sr.yaml` |
 | `github-token` | GitHub token for creating releases | `${{ github.token }}` |
 | `git-user-name` | Git user name for tag creation | `semantic-release[bot]` |
 | `git-user-email` | Git user email for tag creation | `semantic-release[bot]@urmzd.com` |
@@ -255,7 +255,7 @@ sr completions bash >> ~/.bashrc
 
 ### Commit message validation
 
-`sr` ships a `commit-msg` git hook that enforces [Conventional Commits](https://www.conventionalcommits.org/) at commit time. It reads allowed types and patterns from `.urmzd.sr.yml`, falling back to built-in defaults.
+`sr` ships a `commit-msg` git hook that enforces [Conventional Commits](https://www.conventionalcommits.org/) at commit time. It reads allowed types and patterns from `sr.yaml`, falling back to built-in defaults.
 
 **Option 1 — Native git hooks:**
 
@@ -359,7 +359,7 @@ All diagnostic messages go to stderr, so stdout is always clean JSON (or empty o
 | `sr changelog` | Generate or preview the changelog |
 | `sr version` | Show the next version |
 | `sr config` | Validate and display resolved configuration |
-| `sr init` | Create a default `.urmzd.sr.yml` config file |
+| `sr init` | Create a default `sr.yaml` config file |
 | `sr completions` | Generate shell completions (bash, zsh, fish, powershell, elvish) |
 
 ### Common flags
@@ -403,7 +403,7 @@ Force mode will error if:
 
 ## Configuration
 
-`sr` looks for `.urmzd.sr.yml` in the repository root. All fields are optional and have sensible defaults.
+`sr` looks for `sr.yaml` in the repository root. All fields are optional and have sensible defaults.
 
 ### Configuration reference
 

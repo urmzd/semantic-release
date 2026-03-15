@@ -6,6 +6,15 @@ use crate::commit::{CommitType, DEFAULT_COMMIT_PATTERN, default_commit_types};
 use crate::error::ReleaseError;
 use crate::version::BumpLevel;
 
+/// Preferred config file name for new projects.
+pub const DEFAULT_CONFIG_FILE: &str = "sr.yaml";
+
+/// Legacy config file name (deprecated, will be removed in a future release).
+pub const LEGACY_CONFIG_FILE: &str = ".urmzd.sr.yml";
+
+/// Config file candidates, checked in priority order.
+pub const CONFIG_CANDIDATES: &[&str] = &["sr.yaml", "sr.yml", LEGACY_CONFIG_FILE];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ReleaseConfig {
@@ -74,7 +83,20 @@ pub struct ChangelogConfig {
 }
 
 impl ReleaseConfig {
-    /// Load config from a YAML file, falling back to defaults if the file doesn't exist.
+    /// Find the first config file that exists in the given directory.
+    /// Returns `(path, is_legacy)`.
+    pub fn find_config(dir: &Path) -> Option<(std::path::PathBuf, bool)> {
+        for &candidate in CONFIG_CANDIDATES {
+            let path = dir.join(candidate);
+            if path.exists() {
+                let is_legacy = candidate == LEGACY_CONFIG_FILE;
+                return Some((path, is_legacy));
+            }
+        }
+        None
+    }
+
+    /// Load config from a YAML file. Falls back to defaults if the file doesn't exist.
     pub fn load(path: &Path) -> Result<Self, ReleaseError> {
         if !path.exists() {
             return Ok(Self::default());

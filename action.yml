@@ -22,7 +22,7 @@ inputs:
   config:
     description: "Path to the config file"
     required: false
-    default: ".urmzd.sr.yml"
+    default: "sr.yaml"
   github-token:
     description: "GitHub token for creating releases"
     required: false

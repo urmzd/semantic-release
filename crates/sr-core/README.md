@@ -58,7 +58,7 @@ use sr_core::changelog::DefaultChangelogFormatter;
 use sr_core::release::ReleaseStrategy;
 
 // Load configuration
-let config = ReleaseConfig::load(Path::new(".urmzd.sr.yml")).unwrap();
+let config = ReleaseConfig::load(Path::new("sr.yaml")).unwrap();
 
 // Build the strategy with your own GitRepository and VcsProvider implementations
 let strategy = TrunkReleaseStrategy {

@@ -10,7 +10,7 @@ Perform a semantic release using `sr`.
 
 ## Steps
 
-1. Ensure a `.urmzd.sr.yml` config exists. If not, run `sr init`.
+1. Ensure a `sr.yaml` config exists. If not, run `sr init`.
 2. Preview what the release would look like: `sr plan`
 3. To dry-run: `sr release --dry-run`
 4. To execute: `sr release`

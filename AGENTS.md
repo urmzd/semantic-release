@@ -32,7 +32,7 @@ Rust workspace with four crates:
 - `crates/sr-git/src/` — `NativeGitRepository` implementation
 - `crates/sr-github/src/` — `VcsProvider` GitHub implementation
 - `action.yml` — GitHub Action composite wrapper
-- `.urmzd.sr.yml` — Config file format
+- `sr.yaml` — Config file format
 
 ## Commands
 

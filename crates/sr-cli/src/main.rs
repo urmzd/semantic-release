@@ -4,13 +4,11 @@ use std::process::ExitCode;
 use clap::{CommandFactory, Parser, Subcommand};
 use sr_core::changelog::DefaultChangelogFormatter;
 use sr_core::commit::DefaultCommitParser;
-use sr_core::config::ReleaseConfig;
+use sr_core::config::{DEFAULT_CONFIG_FILE, LEGACY_CONFIG_FILE, ReleaseConfig};
 use sr_core::error::ReleaseError;
 use sr_core::release::{ReleaseStrategy, TrunkReleaseStrategy, VcsProvider};
 use sr_git::NativeGitRepository;
 use sr_github::GitHubProvider;
-
-const DEFAULT_CONFIG_FILE: &str = ".urmzd.sr.yml";
 
 #[derive(Parser)]
 #[command(name = "sr", about = "Semantic Release CLI", version)]
@@ -231,6 +229,22 @@ fn is_no_release_error(err: &anyhow::Error) -> bool {
     }
 }
 
+/// Find the config file, printing a deprecation warning if the legacy name is used.
+fn resolve_config_path() -> std::path::PathBuf {
+    match ReleaseConfig::find_config(Path::new(".")) {
+        Some((path, is_legacy)) => {
+            if is_legacy {
+                eprintln!(
+                    "warning: {} is deprecated, rename to {} (legacy support will be removed in a future release)",
+                    LEGACY_CONFIG_FILE, DEFAULT_CONFIG_FILE,
+                );
+            }
+            path
+        }
+        None => std::path::PathBuf::from(DEFAULT_CONFIG_FILE),
+    }
+}
+
 fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -251,26 +265,25 @@ fn run() -> anyhow::Result<()> {
         }
 
         Commands::Config { resolved } => {
-            let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            let config_path = resolve_config_path();
+            let config = ReleaseConfig::load(&config_path)?;
             if resolved {
                 let yaml = serde_yaml_ng::to_string(&config)?;
                 print!("{yaml}");
+            } else if config_path.exists() {
+                let raw = std::fs::read_to_string(&config_path)?;
+                print!("{raw}");
             } else {
-                let path = Path::new(DEFAULT_CONFIG_FILE);
-                if path.exists() {
-                    let raw = std::fs::read_to_string(path)?;
-                    print!("{raw}");
-                } else {
-                    eprintln!("no config file found; showing defaults");
-                    let yaml = serde_yaml_ng::to_string(&config)?;
-                    print!("{yaml}");
-                }
+                eprintln!("no config file found; showing defaults");
+                let yaml = serde_yaml_ng::to_string(&config)?;
+                print!("{yaml}");
             }
             Ok(())
         }
 
         Commands::Version { short } => {
-            let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            let config_path = resolve_config_path();
+            let config = ReleaseConfig::load(&config_path)?;
             let strategy = build_local_strategy(config, false)?;
             let plan = strategy.plan()?;
             if short {
@@ -289,7 +302,8 @@ fn run() -> anyhow::Result<()> {
         }
 
         Commands::Plan { format } => {
-            let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            let config_path = resolve_config_path();
+            let config = ReleaseConfig::load(&config_path)?;
             let formatter = DefaultChangelogFormatter::new(
                 config.changelog.template.clone(),
                 config.types.clone(),
@@ -361,7 +375,8 @@ fn run() -> anyhow::Result<()> {
         }
 
         Commands::Changelog { write, regenerate } => {
-            let config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            let config_path = resolve_config_path();
+            let config = ReleaseConfig::load(&config_path)?;
 
             let formatter = DefaultChangelogFormatter::new(
                 config.changelog.template.clone(),
@@ -494,7 +509,8 @@ fn run() -> anyhow::Result<()> {
             sign_tags,
             draft,
         } => {
-            let mut config = ReleaseConfig::load(Path::new(DEFAULT_CONFIG_FILE))?;
+            let config_path = resolve_config_path();
+            let mut config = ReleaseConfig::load(&config_path)?;
             config.artifacts.extend(artifacts);
             config.stage_files.extend(stage_files);
             if build_command.is_some() {

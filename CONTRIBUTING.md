@@ -54,7 +54,7 @@ repos:
 
 ### How it works
 
-The hook reads `types` and `commit_pattern` from `.urmzd.sr.yml`. If the config file is missing it falls back to the built-in defaults.
+The hook reads `types` and `commit_pattern` from `sr.yaml`. If the config file is missing it falls back to the built-in defaults.
 
 - **Allowed types** are derived from the `types` list — only types defined there are accepted.
 - **Pattern** is derived from `commit_pattern` (a regex with named groups `type`, `scope`, `breaking`, `description`).

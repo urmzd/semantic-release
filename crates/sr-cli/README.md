@@ -47,7 +47,7 @@ sr release
 | `sr changelog` | Generate or preview the changelog |
 | `sr version` | Show the next version |
 | `sr config` | Validate and display resolved configuration |
-| `sr init` | Create a default `.urmzd.sr.yml` config file |
+| `sr init` | Create a default `sr.yaml` config file |
 | `sr completions` | Generate shell completions (bash, zsh, fish, powershell, elvish) |
 
 ### Common flags
@@ -64,7 +64,7 @@ sr release
 
 ## Configuration
 
-`sr` reads `.urmzd.sr.yml` from the repository root. See the [root README](https://github.com/urmzd/semantic-release#configuration) for full configuration documentation.
+`sr` reads `sr.yaml` from the repository root. See the [root README](https://github.com/urmzd/semantic-release#configuration) for full configuration documentation.
 
 ## Prerequisites
 
