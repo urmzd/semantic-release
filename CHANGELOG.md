@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.2 (2026-03-16)
+
+### Refactoring
+
+- rename repo references from urmzd/semantic-release to urmzd/sr ([68659ca](https://github.com/urmzd/sr/commit/68659caa5a61b9b14c0efbb0627171b531d54085))
+
+[Full Changelog](https://github.com/urmzd/sr/compare/v1.7.1...v1.7.2)
+
+
 ## 1.7.1 (2026-03-16)
 
 ### Bug Fixes
