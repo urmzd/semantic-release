@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">sr</h1>
   <p align="center">
-    A single-binary, zero-dependency semantic release tool for any language.
+    AI-powered release engineering CLI — from commit to release.
     <br /><br />
     <a href="https://github.com/urmzd/sr/releases">Download</a>
     &middot;
@@ -17,21 +17,31 @@
 
 ## Why?
 
-The npm `semantic-release` ecosystem is battle-tested but comes with friction:
+Release engineering involves more than just bumping a version. You write commits, review code, create PRs, and then cut a release. Most tools only handle the last step — and even then require Node.js and a pile of plugins.
 
-- **Requires Node.js** — even for Go, Rust, Python, and Java projects.
-- **Complex plugin config** — wiring together `@semantic-release/*` packages is error-prone.
-- **Coupled to CI runtime** — plugins shell out to language-specific toolchains at release time.
+**sr** handles the full lifecycle:
 
-**sr** solves this:
-
-- **Single static binary** — no runtime, no package manager, minimal dependencies.
-- **Language-agnostic** — works with any project that uses git tags for versioning.
-- **Zero-config defaults** — conventional commits + semver + GitHub releases out of the box.
-- **Structured JSON output** — pipe `sr release` to `jq` for custom CI pipelines.
+- **AI-powered commits** — `sr commit` analyzes your changes and generates atomic conventional commits
+- **AI code review** — `sr review` gives you instant feedback on staged changes
+- **AI PR generation** — `sr pr` creates title + body from your branch commits
+- **Automated releases** — `sr release` bumps versions, generates changelogs, tags, and publishes
+- **Single static binary** — no runtime, no package manager
+- **Language-agnostic** — works with any project that uses git tags for versioning
+- **Zero-config defaults** — conventional commits + semver + GitHub releases out of the box
 
 ## Features
 
+### AI-powered workflow
+- AI commit generation with atomic grouping and conventional commit format (`sr commit`)
+- AI code review with severity-based feedback (`sr review`)
+- AI PR title + body generation (`sr pr`)
+- AI branch name suggestions (`sr branch`)
+- AI commit explanation (`sr explain`)
+- Freeform Q&A about your repo (`sr ask`)
+- Multiple AI backends: Claude, GitHub Copilot, Gemini (auto-detected with fallback)
+- Commit plan caching for incremental re-analysis
+
+### Release automation
 - Conventional Commits parsing (built-in, configurable via `commit_pattern`)
 - `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer detection (in addition to `!` suffix)
 - Semantic versioning bumps (major / minor / patch)
@@ -160,7 +170,7 @@ jobs:
 
 | Input | Description | Default |
 |-------|-------------|---------|
-| `command` | The `sr` subcommand to run (`release`, `plan`, `changelog`, `version`, `config`, `completions`) | `release` |
+| `command` | The `sr` subcommand to run (`release`, `plan`, `changelog`, `version`, `config`, `completions`, `commit`, `review`, `explain`, `branch`, `pr`, `ask`, `cache`) | `release` |
 | `dry-run` | Preview changes without executing them | `false` |
 | `force` | Re-release the current tag (use when a previous release partially failed) | `false` |
 | `config` | Path to the config file | `sr.yaml` |
@@ -246,14 +256,17 @@ No additional host configuration is needed — `sr` derives the API base URL fro
 ## Quick Start
 
 ```bash
-# Generate a default config file
-sr init
+# AI-powered commits from your changes
+sr commit
 
-# Preview what the next release would look like (includes changelog)
+# AI code review
+sr review
+
+# Generate a PR
+sr pr --create
+
+# Preview what the next release would look like
 sr plan
-
-# Dry-run a release (no side effects)
-sr release --dry-run
 
 # Execute the release
 sr release
@@ -293,13 +306,15 @@ The hook validates the first line of each commit message against the pattern `<t
 ### End-to-end release flow
 
 ```
-commit (hook validates) → push → sr plan (preview) → sr release (execute)
+sr commit → sr review → sr pr → push → sr plan → sr release
 ```
 
-1. **Commit** — the commit-msg hook ensures every commit follows the conventional format (`feat:`, `fix:`, `feat!:`, etc.).
-2. **Preview** — run `sr plan` to see the next version, included commits, and a changelog preview.
-3. **Dry-run** — run `sr release --dry-run` to simulate the full release without side effects (no tags created).
-4. **Release** — run `sr release` to execute the full pipeline:
+1. **Commit** — `sr commit` analyzes changes and creates atomic conventional commits (or the commit-msg hook validates manual commits).
+2. **Review** — `sr review` provides AI code review before pushing.
+3. **PR** — `sr pr --create` generates and opens a pull request.
+4. **Preview** — run `sr plan` to see the next version, included commits, and a changelog preview.
+5. **Dry-run** — run `sr release --dry-run` to simulate the full release without side effects (no tags created).
+6. **Release** — run `sr release` to execute the full pipeline:
    - Bumps version in configured manifest files
    - Runs `build_command` if configured (with `SR_VERSION` and `SR_TAG` env vars)
    - Generates and commits the changelog (with version files)
@@ -363,6 +378,20 @@ All diagnostic messages go to stderr, so stdout is always clean JSON (or empty o
 
 ## CLI Reference
 
+### AI commands
+
+| Command | Description |
+|---------|-------------|
+| `sr commit` | Generate atomic commits from changes (AI-powered) |
+| `sr review` | AI code review of staged/branch changes |
+| `sr explain` | Explain recent commits |
+| `sr branch` | Suggest conventional branch name |
+| `sr pr` | Generate PR title + body from branch commits |
+| `sr ask` | Freeform Q&A about the repo |
+| `sr cache` | Manage the AI commit plan cache |
+
+### Release commands
+
 | Command | Description |
 |---------|-------------|
 | `sr release` | Execute a release (tag + GitHub release) |
@@ -373,8 +402,28 @@ All diagnostic messages go to stderr, so stdout is always clean JSON (or empty o
 | `sr init` | Create a default `sr.yaml` config file |
 | `sr completions` | Generate shell completions (bash, zsh, fish, powershell, elvish) |
 
+### Global flags
+
+All commands accept these flags for AI backend configuration:
+
+| Flag | Env var | Description |
+|------|---------|-------------|
+| `--backend` | `SR_BACKEND` | AI backend: `claude`, `copilot`, or `gemini` (auto-detected if omitted) |
+| `--model` | `SR_MODEL` | AI model to use |
+| `--budget` | `SR_BUDGET` | Max budget in USD, claude only (default: 0.50) |
+| `--debug` | `SR_DEBUG` | Enable debug output |
+
 ### Common flags
 
+- `sr commit --staged` — only analyze staged changes
+- `sr commit --dry-run` — preview commit plan without executing
+- `sr commit --yes` — skip confirmation prompt
+- `sr commit --no-cache` — bypass cache, always call AI
+- `sr commit -M "context"` — provide additional context for commit generation
+- `sr review --base main` — review against a specific base ref
+- `sr pr --create` — create the PR via gh CLI
+- `sr pr --draft` — create as draft PR
+- `sr branch --create` — create the suggested branch
 - `sr release --dry-run` — preview without making changes
 - `sr release --force` — re-release the current tag (for partial failure recovery)
 - `sr release --build-command 'npm run build'` — run a command after version bump, before commit
@@ -539,6 +588,10 @@ artifacts:
 | `GH_TOKEN` / `GITHUB_TOKEN` | Release | GitHub API token for creating releases and uploading artifacts. Not needed for `--dry-run` |
 | `SR_VERSION` | All hooks | The new version string (e.g. `1.2.3`), set for `pre_release_command`, `build_command`, and `post_release_command` |
 | `SR_TAG` | All hooks | The new tag name (e.g. `v1.2.3`), set for `pre_release_command`, `build_command`, and `post_release_command` |
+| `SR_BACKEND` | AI commands | AI backend to use (`claude`, `copilot`, `gemini`) |
+| `SR_MODEL` | AI commands | AI model to use |
+| `SR_BUDGET` | AI commands | Max budget in USD for Claude backend |
+| `SR_DEBUG` | AI commands | Enable debug output for AI calls |
 
 ### Commit types
 
@@ -683,6 +736,7 @@ Or via CLI: `sr release --prerelease alpha`
 | [`sr-core`](crates/sr-core/) | Pure domain logic — traits, config, versioning, changelog |
 | [`sr-git`](crates/sr-git/) | Git implementation (native `git` CLI) |
 | [`sr-github`](crates/sr-github/) | GitHub VCS provider (REST API) |
+| [`sr-ai`](crates/sr-ai/) | AI backends, caching, and AI-powered git commands |
 | [`sr-cli`](crates/sr-cli/) | CLI binary (`clap`) — wires everything together |
 
 `action.yml` in the repo root is the GitHub Action composite wrapper.
@@ -701,11 +755,12 @@ Or via CLI: `sr release --prerelease alpha`
 
 ## Design Philosophy
 
-1. **Trunk-based flow** — releases happen from a single branch; no release branches.
-2. **Conventional commits as source of truth** — commit messages drive versioning.
-3. **Zero-config** — works out of the box with reasonable defaults.
-4. **Focused scope** — sr handles versioning, tagging, changelog, and publishing. Pre-release validation and downstream actions belong in CI pipeline steps.
-5. **Language-agnostic** — sr knows about git and semver, not about cargo or npm.
+1. **End-to-end** — sr covers the full release lifecycle from commit to release, not just the last step.
+2. **AI-native** — AI is a first-class concern, not a plugin. Every workflow step benefits from intelligent automation.
+3. **Trunk-based flow** — releases happen from a single branch; no release branches.
+4. **Conventional commits as source of truth** — commit messages drive versioning.
+5. **Zero-config** — works out of the box with reasonable defaults.
+6. **Language-agnostic** — sr knows about git and semver, not about cargo or npm.
 
 ## Development
 

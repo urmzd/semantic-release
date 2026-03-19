@@ -1,6 +1,6 @@
 # sr-cli
 
-The CLI binary for [sr](https://github.com/urmzd/sr) — a single-binary, zero-dependency semantic release tool.
+The CLI binary for [sr](https://github.com/urmzd/sr) — an AI-powered release engineering CLI.
 
 [![crates.io](https://img.shields.io/crates/v/sr-cli.svg)](https://crates.io/crates/sr-cli)
 
@@ -25,20 +25,37 @@ Pre-built binaries are available on the [releases page](https://github.com/urmzd
 ## Quick Start
 
 ```bash
-# Create a default config file
-sr init
+# AI-powered commits from your changes
+sr commit
+
+# AI code review
+sr review
+
+# Generate a PR
+sr pr --create
 
 # Preview the next release
 sr plan
-
-# Dry-run (no side effects)
-sr release --dry-run
 
 # Execute the release
 sr release
 ```
 
 ## Commands
+
+### AI commands
+
+| Command | Description |
+|---------|-------------|
+| `sr commit` | Generate atomic commits from changes (AI-powered) |
+| `sr review` | AI code review of staged/branch changes |
+| `sr explain` | Explain recent commits |
+| `sr branch` | Suggest conventional branch name |
+| `sr pr` | Generate PR title + body from branch commits |
+| `sr ask` | Freeform Q&A about the repo |
+| `sr cache` | Manage the AI commit plan cache |
+
+### Release commands
 
 | Command | Description |
 |---------|-------------|
@@ -50,17 +67,14 @@ sr release
 | `sr init` | Create a default `sr.yaml` config file |
 | `sr completions` | Generate shell completions (bash, zsh, fish, powershell, elvish) |
 
-### Common flags
+### Global flags
 
-| Flag | Description |
-|------|-------------|
-| `sr release --dry-run` | Preview without making changes |
-| `sr plan --format json` | Machine-readable output |
-| `sr changelog --write` | Write changelog to disk |
-| `sr changelog --regenerate` | Rebuild entire changelog from all tags |
-| `sr version --short` | Print only the version number |
-| `sr config --resolved` | Show config with defaults applied |
-| `sr init --force` | Overwrite existing config file |
+| Flag | Env var | Description |
+|------|---------|-------------|
+| `--backend` | `SR_BACKEND` | AI backend: `claude`, `copilot`, or `gemini` |
+| `--model` | `SR_MODEL` | AI model to use |
+| `--budget` | `SR_BUDGET` | Max budget in USD (claude only, default: 0.50) |
+| `--debug` | `SR_DEBUG` | Enable debug output |
 
 ## Configuration
 
@@ -70,6 +84,7 @@ sr release
 
 - `git` — for all repository operations
 - `GH_TOKEN` or `GITHUB_TOKEN` — for creating GitHub releases (set automatically on GitHub Actions runners)
+- At least one AI backend CLI installed: `claude`, `gh copilot`, or `gemini` (for AI commands)
 
 ## License
 

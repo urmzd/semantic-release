@@ -2,17 +2,18 @@
 
 ## Identity
 
-You are an agent working on **sr** (Semantic Release) — a single-binary, zero-dependency semantic release tool for any language. It handles conventional commits, semantic versioning, changelog generation, and GitHub releases.
+You are an agent working on **sr** — an AI-powered release engineering CLI. It handles the full lifecycle from commit to release: AI-powered commits, code review, PR generation, conventional commits, semantic versioning, changelog generation, and GitHub releases.
 
 ## Architecture
 
-Rust workspace with four crates:
+Rust workspace with five crates:
 
 | Crate | Role |
 |-------|------|
 | `sr-core` | Pure domain logic — traits, config, versioning, changelog |
 | `sr-git` | Git implementation (native `git` CLI via `NativeGitRepository`) |
 | `sr-github` | GitHub VCS provider (REST API via `ureq`) |
+| `sr-ai` | AI backends (Claude, Copilot, Gemini), caching, and AI-powered git commands |
 | `sr-cli` | CLI binary (`clap`) — wires everything together |
 
 ### Core Traits
@@ -27,10 +28,13 @@ Rust workspace with four crates:
 
 ## Key Files
 
-- `crates/sr-cli/src/main.rs` — CLI entry point
+- `crates/sr-cli/src/main.rs` — CLI entry point (async, wires all crates)
 - `crates/sr-core/src/` — Domain logic, config, versioning, changelog
 - `crates/sr-git/src/` — `NativeGitRepository` implementation
 - `crates/sr-github/src/` — `VcsProvider` GitHub implementation
+- `crates/sr-ai/src/ai/` — AI backends (Claude, Copilot, Gemini)
+- `crates/sr-ai/src/commands/` — AI-powered commands (commit, review, explain, branch, pr, ask, cache)
+- `crates/sr-ai/src/cache/` — Commit plan caching with fingerprinting
 - `action.yml` — GitHub Action composite wrapper
 - `sr.yaml` — Config file format
 

@@ -96,6 +96,7 @@ crates/
   sr-core/     Pure domain logic — traits, config, versioning, changelog
   sr-git/      Git implementation (native git CLI)
   sr-github/   GitHub VCS provider (REST API via ureq)
+  sr-ai/       AI backends (Claude, Copilot, Gemini), caching, AI-powered commands
   sr-cli/      CLI binary (clap) — wires everything together
 action.yml     GitHub Action composite wrapper (repo root)
 ```
