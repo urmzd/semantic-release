@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.0 (2026-03-19)
+
+### Features
+
+- **cli**: add git hooks management, self-update, and remove pre-commit framework ([35460d5](https://github.com/urmzd/sr/commit/35460d50513d448252bd2beaa85553f65f5c1317))
+
+[Full Changelog](https://github.com/urmzd/sr/compare/v1.8.2...v1.9.0)
+
+
 ## 1.8.2 (2026-03-19)
 
 ### Bug Fixes
