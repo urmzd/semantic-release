@@ -1,10 +1,12 @@
-use crate::ai::{AiRequest, BackendConfig, resolve_backend};
+use crate::ai::{AiEvent, AiRequest, BackendConfig, resolve_backend};
 use crate::cache::{CacheLookup, CacheManager};
 use crate::git::GitRepo;
 use crate::ui;
 use anyhow::{Context, Result, bail};
+use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitPlan {
@@ -64,12 +66,15 @@ const COMMIT_SCHEMA: &str = r#"{
     "required": ["commits"]
 }"#;
 
-const SYSTEM_PROMPT: &str = r#"You are an expert at analyzing git diffs and creating atomic, well-organized commits following the Angular Conventional Commits standard.
+fn build_system_prompt(commit_pattern: &str, type_names: &[&str]) -> String {
+    let types_list = type_names.join(", ");
+    format!(
+        r#"You are an expert at analyzing git diffs and creating atomic, well-organized commits following the Angular Conventional Commits standard.
 
 HEADER ("message" field):
-- Must match this regex: (?s)(build|bump|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(\S+\))?!?: ([^\n\r]+)((\n\n.*)|(\\s*))?$
+- Must match this regex: {commit_pattern}
 - Format: type(scope): subject
-- Valid types ONLY: build, bump, chore, ci, docs, feat, fix, perf, refactor, revert, style, test
+- Valid types ONLY: {types_list}
 - NEVER invent types. Words like db, auth, api, etc. are scopes, not types. Use the semantically correct type for the change (e.g. feat(db): add user cache migration, fix(auth): resolve token expiry)
 - scope is optional but recommended when applicable
 - subject: imperative mood, lowercase first letter, no period at end, max 72 chars
@@ -90,21 +95,35 @@ COMMIT ORGANIZATION:
 - CRITICAL: A file must NEVER appear in more than one commit. The execution engine stages entire files, not individual hunks. Splitting one file across commits will fail.
 - If one file contains multiple logical changes, place it in the most fitting commit and note the secondary changes in that commit's body.
 - Order: infrastructure/config -> core library -> features -> tests -> docs
-- File paths must be relative to the repository root and match exactly as git reports them"#;
+- File paths must be relative to the repository root and match exactly as git reports them"#
+    )
+}
 
 enum CacheStatus {
     /// No cache used (--no-cache, or cache unavailable)
     None,
     /// Exact cache hit
     Cached,
-    /// Incremental hit with delta info
-    Incremental { cached: usize, reanalyzed: usize },
+    /// Incremental hit
+    Incremental,
 }
 
 pub async fn run(args: &CommitArgs, backend_config: &BackendConfig) -> Result<()> {
-    let repo = GitRepo::discover()?;
+    ui::header("sr commit");
 
-    // Check for changes
+    // Phase 1: Discover repository
+    let repo = GitRepo::discover()?;
+    ui::phase_ok("Repository found", None);
+
+    // Load project config for commit types and pattern
+    let config = sr_core::config::ReleaseConfig::find_config(repo.root().as_path())
+        .map(|(path, _)| sr_core::config::ReleaseConfig::load(&path))
+        .transpose()?
+        .unwrap_or_default();
+    let type_names: Vec<&str> = config.types.iter().map(|t| t.name.as_str()).collect();
+    let system_prompt = build_system_prompt(&config.commit_pattern, &type_names);
+
+    // Phase 2: Check for changes
     let has_changes = if args.staged {
         repo.has_staged_changes()?
     } else {
@@ -115,7 +134,17 @@ pub async fn run(args: &CommitArgs, backend_config: &BackendConfig) -> Result<()
         bail!(crate::error::SrAiError::NoChanges);
     }
 
-    // Resolve AI backend
+    let statuses = repo.file_statuses().unwrap_or_default();
+    let file_count = statuses.len();
+    ui::phase_ok(
+        "Changes detected",
+        Some(&format!(
+            "{file_count} file{}",
+            if file_count == 1 { "" } else { "s" }
+        )),
+    );
+
+    // Phase 3: Resolve AI backend
     let backend = resolve_backend(backend_config).await?;
     let backend_name = backend.name().to_string();
     let model_name = backend_config
@@ -123,6 +152,10 @@ pub async fn run(args: &CommitArgs, backend_config: &BackendConfig) -> Result<()
         .as_deref()
         .unwrap_or("default")
         .to_string();
+    ui::phase_ok(
+        "Backend resolved",
+        Some(&format!("{backend_name} ({model_name})")),
+    );
 
     // Build cache manager (may be None if cache dir unavailable)
     let cache = if args.no_cache {
@@ -137,62 +170,64 @@ pub async fn run(args: &CommitArgs, backend_config: &BackendConfig) -> Result<()
         )
     };
 
-    // Cache lookup
+    // Phase 4: Generate plan (cache or AI)
     let (mut plan, cache_status) = match cache.as_ref().map(|c| c.lookup()) {
-        Some(CacheLookup::ExactHit(cached_plan)) => (cached_plan, CacheStatus::Cached),
+        Some(CacheLookup::ExactHit(cached_plan)) => {
+            ui::phase_ok(
+                "Plan loaded",
+                Some(&format!("{} commits · cached", cached_plan.commits.len())),
+            );
+            (cached_plan, CacheStatus::Cached)
+        }
         Some(CacheLookup::IncrementalHit {
             previous_plan,
             delta_summary,
         }) => {
-            let cached_count = previous_plan.commits.len();
-
             let spinner = ui::spinner(&format!(
-                "Analyzing changes with {} (incremental)...",
-                backend_name
+                "Analyzing changes with {backend_name} (incremental)..."
             ));
+            let (tx, event_handler) = spawn_event_handler(&spinner);
 
             let user_prompt =
                 build_incremental_prompt(args, &repo, &previous_plan, &delta_summary)?;
 
             let request = AiRequest {
-                system_prompt: SYSTEM_PROMPT.to_string(),
+                system_prompt: system_prompt.clone(),
                 user_prompt,
                 json_schema: Some(COMMIT_SCHEMA.to_string()),
                 working_dir: repo.root().to_string_lossy().to_string(),
             };
 
-            let response = backend.request(&request).await?;
-            spinner.finish_and_clear();
+            let response = backend.request(&request, Some(tx)).await?;
+            let _ = event_handler.await;
 
-            let p: CommitPlan = serde_json::from_str(&response.text)
-                .context("failed to parse commit plan from AI response")?;
+            let p: CommitPlan = parse_plan(&response.text)?;
 
-            (
-                p,
-                CacheStatus::Incremental {
-                    cached: cached_count,
-                    reanalyzed: 1, // at least one AI call was made
-                },
-            )
+            let detail = format_done_detail(p.commits.len(), "incremental", &response.usage);
+            ui::spinner_done(&spinner, Some(&detail));
+
+            (p, CacheStatus::Incremental)
         }
         _ => {
-            // Miss or no cache
-            let spinner = ui::spinner(&format!("Analyzing changes with {}...", backend_name));
+            let spinner = ui::spinner(&format!("Analyzing changes with {backend_name}..."));
+            let (tx, event_handler) = spawn_event_handler(&spinner);
 
             let user_prompt = build_user_prompt(args, &repo)?;
 
             let request = AiRequest {
-                system_prompt: SYSTEM_PROMPT.to_string(),
+                system_prompt: system_prompt.clone(),
                 user_prompt,
                 json_schema: Some(COMMIT_SCHEMA.to_string()),
                 working_dir: repo.root().to_string_lossy().to_string(),
             };
 
-            let response = backend.request(&request).await?;
-            spinner.finish_and_clear();
+            let response = backend.request(&request, Some(tx)).await?;
+            let _ = event_handler.await;
 
-            let p: CommitPlan = serde_json::from_str(&response.text)
-                .context("failed to parse commit plan from AI response")?;
+            let p: CommitPlan = parse_plan(&response.text)?;
+
+            let detail = format_done_detail(p.commits.len(), "", &response.usage);
+            ui::spinner_done(&spinner, Some(&detail));
 
             (p, CacheStatus::None)
         }
@@ -203,35 +238,37 @@ pub async fn run(args: &CommitArgs, backend_config: &BackendConfig) -> Result<()
     }
 
     // Validate: merge commits with shared files
+    let pre_validate_count = plan.commits.len();
     plan = validate_plan(plan);
+    if plan.commits.len() < pre_validate_count {
+        ui::warn(&format!(
+            "Shared files detected — merged {} commits into 1",
+            pre_validate_count - plan.commits.len() + 1
+        ));
+    }
 
     // Store in cache (before display/execute so dry-runs populate cache too)
     if let Some(cache) = &cache {
         cache.store(&plan, &backend_name, &model_name);
     }
 
-    // Display plan with cache status indicator
-    match &cache_status {
-        CacheStatus::Cached => println!("[cached]"),
-        CacheStatus::Incremental { cached, reanalyzed } => {
-            println!("[incremental: {cached} cached, {reanalyzed} re-analyzed]")
-        }
-        CacheStatus::None => {}
-    }
-    ui::display_plan(&plan);
+    // Display plan
+    let cache_label: Option<&str> = match &cache_status {
+        CacheStatus::Cached => Some("cached"),
+        CacheStatus::Incremental => Some("incremental"),
+        CacheStatus::None => None,
+    };
+    ui::display_plan(&plan, &statuses, cache_label);
 
     if args.dry_run {
+        ui::info("Dry run — no commits created");
         println!();
-        println!("(dry run - no commits created)");
         return Ok(());
     }
 
     // Confirm
-    if !args.yes {
-        println!();
-        if !ui::confirm("Execute this plan? [y/N]")? {
-            bail!(crate::error::SrAiError::Cancelled);
-        }
+    if !args.yes && !ui::confirm("Execute plan? [y/N]")? {
+        bail!(crate::error::SrAiError::Cancelled);
     }
 
     // Execute
@@ -307,17 +344,6 @@ fn validate_plan(plan: CommitPlan) -> CommitPlan {
         return plan;
     }
 
-    eprintln!();
-    eprintln!("Notice: shared files detected across commits — merging affected commits.");
-    eprintln!(
-        "Shared files: {}",
-        dupes
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
-
     // Partition into tainted (has any dupe file) and clean
     let mut tainted = Vec::new();
     let mut clean = Vec::new();
@@ -386,21 +412,79 @@ fn validate_plan(plan: CommitPlan) -> CommitPlan {
     CommitPlan { commits: result }
 }
 
+/// Parse a commit plan from JSON text, tolerating duplicate fields.
+fn parse_plan(text: &str) -> Result<CommitPlan> {
+    // Parse to Value first — serde_json::Value keeps the last value for duplicate keys,
+    // while #[derive(Deserialize)] rejects them. This handles AI responses that
+    // occasionally produce duplicate fields when schema is embedded in the prompt.
+    let value: serde_json::Value =
+        serde_json::from_str(text).context("failed to parse JSON from AI response")?;
+    serde_json::from_value(value).context("failed to parse commit plan from AI response")
+}
+
+/// Spawn a background task that renders AI events (tool calls) above a spinner.
+fn spawn_event_handler(
+    spinner: &ProgressBar,
+) -> (mpsc::UnboundedSender<AiEvent>, tokio::task::JoinHandle<()>) {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let pb = spinner.clone();
+    let handle = tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                AiEvent::ToolCall { input, .. } => ui::tool_call(&pb, &input),
+            }
+        }
+    });
+    (tx, handle)
+}
+
+/// Format the detail string for spinner_done, including usage if available.
+fn format_done_detail(
+    commit_count: usize,
+    extra: &str,
+    usage: &Option<crate::ai::AiUsage>,
+) -> String {
+    let commits = format!(
+        "{commit_count} commit{}",
+        if commit_count == 1 { "" } else { "s" }
+    );
+    let extra_part = if extra.is_empty() {
+        String::new()
+    } else {
+        format!(" · {extra}")
+    };
+    let usage_part = match usage {
+        Some(u) => {
+            let cost = u
+                .cost_usd
+                .map(|c| format!(" · ${c:.4}"))
+                .unwrap_or_default();
+            format!(
+                " · {} in / {} out{}",
+                ui::format_tokens(u.input_tokens),
+                ui::format_tokens(u.output_tokens),
+                cost
+            )
+        }
+        None => String::new(),
+    };
+    format!("{commits}{extra_part}{usage_part}")
+}
+
 fn execute_plan(repo: &GitRepo, plan: &CommitPlan) -> Result<()> {
     // Unstage everything first
     repo.reset_head()?;
 
     let total = plan.commits.len();
+    let mut created: Vec<(String, String)> = Vec::new();
 
     for (i, commit) in plan.commits.iter().enumerate() {
-        println!();
-        println!("Creating commit {}/{total}: {}", i + 1, commit.message);
+        ui::commit_start(i + 1, total, &commit.message);
 
         // Stage files for this commit
         for file in &commit.files {
-            if !repo.stage_file(file)? {
-                eprintln!("  Warning: file not found: {file}");
-            }
+            let ok = repo.stage_file(file)?;
+            ui::file_staged(file, ok);
         }
 
         // Build full commit message
@@ -421,16 +505,15 @@ fn execute_plan(repo: &GitRepo, plan: &CommitPlan) -> Result<()> {
         // Create commit (only if there are staged files)
         if repo.has_staged_after_add()? {
             repo.commit(&full_message)?;
+            let sha = repo.head_short().unwrap_or_else(|_| "???????".to_string());
+            ui::commit_created(&sha);
+            created.push((sha, commit.message.clone()));
         } else {
-            eprintln!(
-                "  Warning: no files staged for this commit (may already be committed or missing)"
-            );
+            ui::commit_skipped();
         }
     }
 
-    println!();
-    println!("Done! Recent commits:");
-    println!("{}", repo.recent_commits(total)?);
+    ui::summary(&created);
 
     Ok(())
 }
