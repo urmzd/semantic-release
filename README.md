@@ -583,13 +583,30 @@ artifacts:
 
 | Filename | Key updated | Method | Notes |
 |---|---|---|---|
-| `Cargo.toml` | `package.version` or `workspace.package.version` | TOML parser | Preserves formatting/comments. Also updates `[workspace.dependencies]` entries that have both `path` and `version` fields |
-| `package.json` | `version` | JSON parser | Pretty-printed output with trailing newline |
-| `pyproject.toml` | `project.version` or `tool.poetry.version` | TOML parser | Preserves formatting/comments. Supports both PEP 621 and Poetry layouts |
+| `Cargo.toml` | `package.version` or `workspace.package.version` | TOML parser | Preserves formatting/comments. Also updates `[workspace.dependencies]` entries that have both `path` and `version` fields. **Auto-discovers workspace members** |
+| `package.json` | `version` | JSON parser | Pretty-printed output with trailing newline. **Auto-discovers npm workspace members** |
+| `pyproject.toml` | `project.version` or `tool.poetry.version` | TOML parser | Preserves formatting/comments. Supports both PEP 621 and Poetry layouts. **Auto-discovers uv workspace members** |
 | `pom.xml` | First `<version>` after `</parent>` (or `</modelVersion>`) | Regex | Skips the `<parent>` block to avoid changing the parent version |
 | `build.gradle` | `version = '...'` or `version = "..."` | Regex | Only replaces the first match (avoids changing dependency versions) |
 | `build.gradle.kts` | `version = "..."` | Regex | Only replaces the first match |
 | `*.go` | `var Version = "..."` or `const Version string = "..."` | Regex | Matches the first `Version` variable/constant declaration |
+
+#### Workspace auto-discovery
+
+When bumping a workspace root, `sr` automatically finds and bumps all member manifests — no need to list them individually in `version_files`:
+
+| Ecosystem | Root indicator | Members discovered via |
+|-----------|---------------|----------------------|
+| **Cargo** | `[workspace]` with `members` | `workspace.members` globs → member `Cargo.toml` files (skips `version.workspace = true`) |
+| **npm** | `workspaces` array in `package.json` | `workspaces` globs → member `package.json` files (skips members without `version`) |
+| **uv** | `[tool.uv.workspace]` with `members` | `tool.uv.workspace.members` globs → member `pyproject.toml` files (skips members without `version`) |
+
+For example, a Cargo workspace only needs the root listed:
+
+```yaml
+version_files:
+  - Cargo.toml    # automatically bumps all workspace member Cargo.toml files
+```
 
 ### Environment variables
 

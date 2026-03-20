@@ -523,7 +523,12 @@ where
         let mut bumped_files: Vec<String> = Vec::new();
         for file in &self.config.version_files {
             match bump_version_file(Path::new(file), version_str) {
-                Ok(()) => bumped_files.push(file.clone()),
+                Ok(extra) => {
+                    bumped_files.push(file.clone());
+                    for extra_path in extra {
+                        bumped_files.push(extra_path.to_string_lossy().into_owned());
+                    }
+                }
                 Err(e) if !self.config.version_files_strict => {
                     eprintln!("warning: {e} — skipping {file}");
                 }
