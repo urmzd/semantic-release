@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.12.0 (2026-03-20)
+
+### Features
+
+- **version-files**: auto-discover and bump workspace members ([b28c18e](https://github.com/urmzd/sr/commit/b28c18e6426a4fc077d984b69ff4e7f9179f237b))
+
+[Full Changelog](https://github.com/urmzd/sr/compare/v1.11.0...v1.12.0)
+
+
 ## 1.11.0 (2026-03-20)
 
 ### Features
