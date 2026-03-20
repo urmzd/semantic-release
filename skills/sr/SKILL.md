@@ -42,9 +42,19 @@ Use `sr` to manage the full release lifecycle.
 | `sr release --force` | Re-release current tag (partial failure recovery) |
 | `sr release --sign-tags` | Sign tags with GPG/SSH |
 | `sr release --draft` | Create GitHub release as draft |
+| `sr release -p <name>` | Release a specific monorepo package |
 | `sr changelog --write` | Write changelog to disk |
 | `sr version --short` | Print next version number |
 | `sr config --resolved` | Show resolved config with defaults |
+
+## Monorepo
+
+Use `-p/--package` to target a specific package when `packages` is configured in `sr.yaml`:
+
+```bash
+sr release -p core          # release only the core package
+sr plan -p cli              # preview next release for cli
+```
 
 ## Global Flags
 

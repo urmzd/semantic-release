@@ -75,3 +75,13 @@ Cargo.toml, package.json, pyproject.toml, pom.xml, build.gradle(.kts), `*.go` (V
 1. Edit `sr-core/src/` where version file bumping is implemented
 2. Add a new match arm for the file extension/name
 3. Add tests with sample files
+
+## Monorepo Support
+
+`sr` supports monorepos via the `packages` config. Each package defines a `name`, `path`, and optional overrides. Key implementation details:
+
+- **Config**: `PackageConfig` in `sr-core/src/config.rs`. `ReleaseConfig::resolve_package()` merges package overrides with root config.
+- **Path filtering**: `GitRepository::commits_since_in_path()` and `commits_between_in_path()` filter commits by directory using `git log -- <path>`.
+- **Tag scoping**: Each package uses its own tag prefix (default: `{name}/v`), e.g. `core/v1.2.0`.
+- **CLI**: `-p/--package` flag on `release`, `plan`, `version`, and `changelog` commands.
+- When `packages` is empty, behavior is unchanged (single-package mode).

@@ -432,6 +432,7 @@ All commands accept these flags for AI backend configuration:
 - `sr pr --create` — create the PR via gh CLI
 - `sr pr --draft` — create as draft PR
 - `sr branch --create` — create the suggested branch
+- `sr release -p core` — target a specific monorepo package
 - `sr release --dry-run` — preview without making changes
 - `sr release --force` — re-release the current tag (for partial failure recovery)
 - `sr release --build-command 'npm run build'` — run a command after version bump, before commit
@@ -497,6 +498,7 @@ Force mode will error if:
 | `draft` | `bool` | `false` | Create GitHub releases as drafts. Draft releases are not visible to the public until manually published |
 | `release_name_template` | `string?` | `null` | [Minijinja](https://docs.rs/minijinja) template for the GitHub release name. Variables: `version`, `tag_name`, `tag_prefix`. Default: uses the tag name (e.g. `v1.2.0`) |
 | `changelog.template` | `string?` | `null` | Custom [minijinja](https://docs.rs/minijinja) template for changelog rendering. See template variables below |
+| `packages` | `PackageConfig[]` | `[]` | Monorepo packages — each released independently. See [Monorepo support](#monorepo-support) |
 
 ### Example config
 
@@ -733,9 +735,101 @@ Or via CLI: `sr release --prerelease alpha`
 - Floating tags are not updated for pre-releases
 - Stable releases (`prerelease: null`) skip over pre-release tags entirely
 
+### Monorepo support
+
+For repositories containing multiple independently versioned packages, use the `packages` config:
+
+```yaml
+# sr.yaml
+packages:
+  - name: core
+    path: crates/core
+    version_files:
+      - crates/core/Cargo.toml
+    changelog:
+      file: crates/core/CHANGELOG.md
+  - name: cli
+    path: crates/cli
+    tag_prefix: "cli-v"              # default: "cli/v"
+    version_files:
+      - crates/cli/Cargo.toml
+    build_command: "cargo build -p cli --release"
+    stage_files:
+      - crates/cli/Cargo.lock
+```
+
+Each package is released independently — commits are filtered by path, so only changes touching a package's directory trigger its release. Tags are scoped per package (e.g. `core/v1.2.0`, `cli-v3.0.0`).
+
+Use `-p/--package` to target a specific package:
+
+```bash
+sr release -p core              # release only the core package
+sr plan -p cli --format json    # preview next release for cli
+sr version -p core --short      # show next version for core
+sr changelog -p cli --write     # generate changelog for cli
+```
+
+**Package config fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — (required) | Package name, used in the default tag prefix |
+| `path` | `string` | — (required) | Directory path relative to repo root. Only commits touching this path trigger a release |
+| `tag_prefix` | `string?` | `"{name}/v"` | Tag prefix override |
+| `version_files` | `string[]` | inherited | Version files override (inherits root if empty) |
+| `changelog` | `object?` | inherited | Changelog config override |
+| `build_command` | `string?` | inherited | Build command override |
+| `stage_files` | `string[]` | inherited | Stage files override (inherits root if empty) |
+
+All other config fields (`types`, `branches`, `commit_pattern`, etc.) are inherited from the root config.
+
+When `packages` is empty or absent, `sr` behaves as a single-package tool (no change from previous behavior).
+
 ### Limitations
 
 - **GitHub only** — the `VcsProvider` trait exists for extensibility, but only GitHub is implemented
+
+## FAQ / Troubleshooting
+
+### Migrating from v0.x to v1
+
+v1.0.0 introduced two breaking changes:
+
+1. **Lifecycle hooks removed** — the `hooks` config fields (`pre_release`, `post_release`) inside the release pipeline were removed. They mixed concerns and caused a CI bug where hook stdout leaked into sr's machine-readable output. Replace them with:
+   - `pre_release_command` / `post_release_command` config fields (added in v1.x), or
+   - Separate CI pipeline steps before/after `sr release`
+
+2. **Structured JSON output** — `sr release` now prints JSON to stdout instead of plain text. If you were parsing stdout, update your scripts to use `jq`:
+   ```bash
+   # Old
+   VERSION=$(sr release)
+   # New
+   VERSION=$(sr release | jq -r '.version')
+   ```
+
+### `sr release` exits with code 2
+
+Exit code 2 means **no releasable commits** were found since the last tag. This is not an error — it means all commits since the last release are non-bumping types (e.g. `chore`, `docs`, `ci`). To force a release anyway, use `sr release --force`.
+
+### AI commands fail with no backend found
+
+`sr` auto-detects AI backends by checking for CLIs in this order: Claude (`claude`), GitHub Copilot (`gh copilot`), Gemini (`gemini`). If none are found, AI commands will fail. Install one of these CLIs or specify explicitly with `--backend`.
+
+### Changelog is not generated
+
+Set `changelog.file` in `sr.yaml` — changelog generation is opt-in:
+```yaml
+changelog:
+  file: CHANGELOG.md
+```
+
+### Version files not updated
+
+Ensure your manifest files are listed in `version_files` and match a [supported format](#supported-version-files). Set `version_files_strict: true` to fail loudly on unsupported files instead of silently skipping them.
+
+### Tags are not signed
+
+Set `sign_tags: true` in `sr.yaml` or pass `--sign-tags`. You must have a GPG or SSH signing key configured in git (`git config user.signingkey`).
 
 ## Architecture
 
