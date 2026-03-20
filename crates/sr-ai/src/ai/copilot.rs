@@ -1,7 +1,8 @@
-use super::{AiBackend, AiRequest, AiResponse};
+use super::{AiBackend, AiEvent, AiRequest, AiResponse};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tokio::process::Command;
+use tokio::sync::mpsc;
 
 const DEFAULT_MODEL: &str = "gpt-4.1";
 
@@ -43,7 +44,11 @@ impl AiBackend for CopilotBackend {
             .is_ok_and(|o| o.status.success())
     }
 
-    async fn request(&self, req: &AiRequest) -> Result<AiResponse> {
+    async fn request(
+        &self,
+        req: &AiRequest,
+        _events: Option<mpsc::UnboundedSender<AiEvent>>,
+    ) -> Result<AiResponse> {
         let model = self.model.as_deref().unwrap_or(DEFAULT_MODEL);
         let system = build_system_prompt(&req.system_prompt, req.json_schema.as_deref());
 
@@ -92,7 +97,7 @@ impl AiBackend for CopilotBackend {
         // Extract JSON from response (may be wrapped in markdown fences)
         let text = extract_json(&raw).unwrap_or(raw);
 
-        Ok(AiResponse { text })
+        Ok(AiResponse { text, usage: None })
     }
 }
 
