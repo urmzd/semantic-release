@@ -1,6 +1,6 @@
 use crate::ai::{AiEvent, AiRequest, BackendConfig, resolve_backend};
 use crate::cache::{CacheLookup, CacheManager};
-use crate::git::GitRepo;
+use crate::git::{GitRepo, SnapshotGuard};
 use crate::ui;
 use anyhow::{Context, Result, bail};
 use indicatif::ProgressBar;
@@ -170,6 +170,12 @@ pub async fn run(args: &CommitArgs, backend_config: &BackendConfig) -> Result<()
         )
     };
 
+    // Snapshot the working tree before the agent runs.
+    // If anything goes wrong (agent failure, unexpected mutations),
+    // the guard restores the working tree from the snapshot on drop.
+    let snapshot = SnapshotGuard::new(&repo)?;
+    ui::phase_ok("Working tree snapshot saved", None);
+
     // Phase 4: Generate plan (cache or AI)
     let (mut plan, cache_status) = match cache.as_ref().map(|c| c.lookup()) {
         Some(CacheLookup::ExactHit(cached_plan)) => {
@@ -273,6 +279,9 @@ pub async fn run(args: &CommitArgs, backend_config: &BackendConfig) -> Result<()
 
     // Execute
     execute_plan(&repo, &plan)?;
+
+    // All commits succeeded — clear the snapshot
+    snapshot.success();
 
     Ok(())
 }

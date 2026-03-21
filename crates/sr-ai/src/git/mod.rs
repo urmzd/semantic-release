@@ -216,4 +216,207 @@ impl GitRepo {
         }
         Ok(map)
     }
+
+    /// Create a snapshot of the working tree state into the platform data directory.
+    /// Location: `<data_local_dir>/sr/snapshots/<repo-hash>/`
+    ///   - macOS:   ~/Library/Application Support/sr/snapshots/<hash>/
+    ///   - Linux:   ~/.local/share/sr/snapshots/<hash>/
+    ///   - Windows: %LOCALAPPDATA%/sr/snapshots/<hash>/
+    ///
+    /// The snapshot includes:
+    /// - A `stash` ref created via `git stash create` (staged + unstaged changes)
+    /// - An `untracked.tar` of untracked files
+    /// - The list of staged files in `staged.txt`
+    /// - The repo root path in `repo_root` (so restore targets the right directory)
+    ///
+    /// Lives completely outside the repo so the agent cannot touch it.
+    pub fn snapshot_working_tree(&self) -> Result<PathBuf> {
+        let snapshot_dir = snapshot_dir_for(&self.root)
+            .context("failed to resolve snapshot directory (no data directory available)")?;
+        std::fs::create_dir_all(&snapshot_dir).context("failed to create snapshot directory")?;
+
+        // Record which repo this snapshot belongs to
+        std::fs::write(
+            snapshot_dir.join("repo_root"),
+            self.root.to_string_lossy().as_bytes(),
+        )
+        .context("failed to write repo_root")?;
+
+        // Capture staged file list
+        let staged = self.git(&["diff", "--cached", "--name-only"])?;
+        std::fs::write(snapshot_dir.join("staged.txt"), staged.trim())
+            .context("failed to write staged.txt")?;
+
+        // Create a stash object without modifying working tree or index.
+        // `git stash create` writes a stash commit but doesn't reset anything.
+        let (ok, stash_ref) = self.git_allow_failure(&["stash", "create"])?;
+        let stash_ref = stash_ref.trim().to_string();
+        if ok && !stash_ref.is_empty() {
+            std::fs::write(snapshot_dir.join("stash_ref"), &stash_ref)
+                .context("failed to write stash_ref")?;
+        } else {
+            let _ = std::fs::remove_file(snapshot_dir.join("stash_ref"));
+        }
+
+        // Archive untracked files
+        let untracked = self.git(&["ls-files", "--others", "--exclude-standard"])?;
+        let untracked_files: Vec<&str> = untracked
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .collect();
+        let tar_path = snapshot_dir.join("untracked.tar");
+        if !untracked_files.is_empty() {
+            let file_list = untracked_files.join("\n");
+            let file_list_path = snapshot_dir.join("untracked_list.txt");
+            std::fs::write(&file_list_path, &file_list)?;
+            let status = Command::new("tar")
+                .args([
+                    "cf",
+                    tar_path.to_str().unwrap(),
+                    "-T",
+                    file_list_path.to_str().unwrap(),
+                ])
+                .current_dir(&self.root)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .context("failed to run tar")?;
+            if !status.success() {
+                eprintln!("warning: failed to archive untracked files");
+            }
+        } else {
+            let _ = std::fs::remove_file(&tar_path);
+        }
+
+        // Mark snapshot as valid
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        std::fs::write(snapshot_dir.join("timestamp"), now.to_string())
+            .context("failed to write timestamp")?;
+
+        Ok(snapshot_dir)
+    }
+
+    /// Restore working tree from the latest snapshot (best-effort).
+    pub fn restore_snapshot(&self) -> Result<()> {
+        let snapshot_dir = self.snapshot_dir()?;
+        if !snapshot_dir.join("timestamp").exists() {
+            bail!("no valid snapshot found");
+        }
+
+        // Restore tracked changes from stash ref
+        let stash_ref_path = snapshot_dir.join("stash_ref");
+        if stash_ref_path.exists() {
+            let stash_ref = std::fs::read_to_string(&stash_ref_path)?;
+            let stash_ref = stash_ref.trim();
+            if !stash_ref.is_empty() {
+                let (ok, _) = self.git_allow_failure(&["stash", "apply", stash_ref])?;
+                if !ok {
+                    eprintln!("warning: failed to apply stash {stash_ref}, trying checkout");
+                    let _ = self.git_allow_failure(&["checkout", "."]);
+                    let _ = self.git_allow_failure(&["stash", "apply", stash_ref]);
+                }
+            }
+        }
+
+        // Restore staged files
+        let staged_path = snapshot_dir.join("staged.txt");
+        if staged_path.exists() {
+            let staged = std::fs::read_to_string(&staged_path)?;
+            for file in staged.lines().filter(|l| !l.trim().is_empty()) {
+                let full = self.root.join(file);
+                if full.exists() {
+                    let _ = self.git_allow_failure(&["add", "--", file]);
+                }
+            }
+        }
+
+        // Restore untracked files
+        let tar_path = snapshot_dir.join("untracked.tar");
+        if tar_path.exists() {
+            let _ = Command::new("tar")
+                .args(["xf", tar_path.to_str().unwrap()])
+                .current_dir(&self.root)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+
+        Ok(())
+    }
+
+    /// Remove the snapshot after a successful operation.
+    pub fn clear_snapshot(&self) {
+        if let Ok(dir) = self.snapshot_dir() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// Returns the snapshot directory path for this repo.
+    pub fn snapshot_dir(&self) -> Result<PathBuf> {
+        snapshot_dir_for(&self.root)
+            .context("failed to resolve snapshot directory (no data directory available)")
+    }
+
+    /// Check if a valid snapshot exists.
+    pub fn has_snapshot(&self) -> bool {
+        self.snapshot_dir()
+            .map(|d| d.join("timestamp").exists())
+            .unwrap_or(false)
+    }
+}
+
+/// Resolve the snapshot directory for a repo root.
+/// `<data_local_dir>/sr/snapshots/<repo-hash>/`
+fn snapshot_dir_for(repo_root: &std::path::Path) -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    let repo_id =
+        &crate::cache::fingerprint::sha256_hex(repo_root.to_string_lossy().as_bytes())[..16];
+    Some(base.join("sr").join("snapshots").join(repo_id))
+}
+
+/// Guard that ensures the snapshot is cleaned up on success
+/// and restored on failure (drop without explicit success).
+pub struct SnapshotGuard<'a> {
+    repo: &'a GitRepo,
+    succeeded: bool,
+}
+
+impl<'a> SnapshotGuard<'a> {
+    /// Create a snapshot and return the guard.
+    pub fn new(repo: &'a GitRepo) -> Result<Self> {
+        repo.snapshot_working_tree()?;
+        Ok(Self {
+            repo,
+            succeeded: false,
+        })
+    }
+
+    /// Mark the operation as successful — snapshot will be cleared on drop.
+    pub fn success(mut self) {
+        self.succeeded = true;
+        self.repo.clear_snapshot();
+    }
+}
+
+impl Drop for SnapshotGuard<'_> {
+    fn drop(&mut self) {
+        if !self.succeeded && self.repo.has_snapshot() {
+            eprintln!("sr: operation failed, restoring working tree from snapshot...");
+            if let Err(e) = self.repo.restore_snapshot() {
+                eprintln!("sr: warning: snapshot restore failed: {e}");
+                if let Ok(dir) = self.repo.snapshot_dir() {
+                    eprintln!(
+                        "sr: snapshot preserved at {} for manual recovery",
+                        dir.display()
+                    );
+                }
+            } else {
+                self.repo.clear_snapshot();
+            }
+        }
+    }
 }

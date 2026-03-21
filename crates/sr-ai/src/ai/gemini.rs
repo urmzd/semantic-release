@@ -5,6 +5,24 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
+/// Read-only tools the Gemini agent is allowed to use.
+/// Replaces `--yolo` (which auto-approves everything) with an explicit allowlist.
+/// No mutating git commands (add, commit, push, reset, clean, rm, etc.).
+const ALLOWED_TOOLS: &[&str] = &[
+    "shell(git diff *)",
+    "shell(git log *)",
+    "shell(git show *)",
+    "shell(git status *)",
+    "shell(git ls-files *)",
+    "shell(git rev-parse *)",
+    "shell(git branch *)",
+    "shell(git cat-file *)",
+    "shell(git rev-list *)",
+    "shell(git shortlog *)",
+    "shell(git blame *)",
+    "read_file",
+];
+
 pub struct GeminiBackend {
     model: Option<String>,
     debug: bool,
@@ -27,7 +45,9 @@ impl GeminiBackend {
         cmd.current_dir(&req.working_dir)
             .arg("--prompt")
             .arg(&prompt)
-            .arg("--yolo")
+            .arg("--sandbox")
+            .arg("--allowed-tools")
+            .args(ALLOWED_TOOLS)
             .arg("--output-format")
             .arg("stream-json");
 
@@ -121,7 +141,9 @@ impl GeminiBackend {
         cmd.current_dir(&req.working_dir)
             .arg("--prompt")
             .arg(&prompt)
-            .arg("--yolo");
+            .arg("--sandbox")
+            .arg("--allowed-tools")
+            .args(ALLOWED_TOOLS);
 
         if let Some(model) = &self.model {
             cmd.arg("--model").arg(model);

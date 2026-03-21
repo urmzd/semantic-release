@@ -6,6 +6,23 @@ use tokio::sync::mpsc;
 
 const DEFAULT_MODEL: &str = "gpt-4.1";
 
+/// Read-only tools the Copilot agent is allowed to use.
+/// Uses gh copilot's `--allow-tool` syntax: `shell(cmd:subcommand)`.
+/// No mutating git commands (add, commit, push, reset, clean, rm, etc.).
+const ALLOWED_TOOLS: &[&str] = &[
+    "shell(git:diff)",
+    "shell(git:log)",
+    "shell(git:show)",
+    "shell(git:status)",
+    "shell(git:ls-files)",
+    "shell(git:rev-parse)",
+    "shell(git:branch)",
+    "shell(git:cat-file)",
+    "shell(git:rev-list)",
+    "shell(git:shortlog)",
+    "shell(git:blame)",
+];
+
 pub struct CopilotBackend {
     model: Option<String>,
     debug: bool,
@@ -59,10 +76,14 @@ impl AiBackend for CopilotBackend {
             .arg(&req.user_prompt)
             .arg("-s")
             .arg("--model")
-            .arg(model)
-            .arg("--allow-tool")
-            .arg("shell(git:*)")
-            .arg("--no-custom-instructions")
+            .arg(model);
+
+        // Sandbox: only allow read-only git subcommands.
+        for tool in ALLOWED_TOOLS {
+            cmd.arg("--allow-tool").arg(tool);
+        }
+
+        cmd.arg("--no-custom-instructions")
             .arg("--system-prompt")
             .arg(&system);
 

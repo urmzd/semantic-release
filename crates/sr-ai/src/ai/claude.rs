@@ -5,6 +5,24 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc::UnboundedSender;
 
+/// Read-only tools the Claude agent is allowed to use.
+/// Matches Claude Code's `--allowed-tools` syntax: `Bash(cmd:subcommand)` and `Read`.
+/// No mutating git commands (add, commit, push, reset, clean, rm, checkout, branch -d, etc.).
+const ALLOWED_TOOLS: &[&str] = &[
+    "Bash(git:diff)",
+    "Bash(git:log)",
+    "Bash(git:show)",
+    "Bash(git:status)",
+    "Bash(git:ls-files)",
+    "Bash(git:rev-parse)",
+    "Bash(git:branch)",
+    "Bash(git:cat-file)",
+    "Bash(git:rev-list)",
+    "Bash(git:shortlog)",
+    "Bash(git:blame)",
+    "Read",
+];
+
 pub struct ClaudeBackend {
     model: Option<String>,
     budget: f64,
@@ -23,12 +41,16 @@ impl ClaudeBackend {
     fn base_command(&self, working_dir: &str) -> Command {
         let model = self.model.as_deref().unwrap_or("haiku");
         let mut cmd = Command::new("claude");
-        cmd.current_dir(working_dir)
-            .arg("--model")
-            .arg(model)
-            .arg("--allowed-tools")
-            .arg("Bash(git:*)")
-            .arg("--max-budget-usd")
+        cmd.current_dir(working_dir).arg("--model").arg(model);
+
+        // Sandbox: only allow read-only git subcommands and file reads.
+        // All mutating operations (add, commit, push, tag) are performed
+        // programmatically by sr after the agent returns its plan.
+        for tool in ALLOWED_TOOLS {
+            cmd.arg("--allowed-tools").arg(tool);
+        }
+
+        cmd.arg("--max-budget-usd")
             .arg(format!("{:.2}", self.budget))
             .arg("-p");
         cmd

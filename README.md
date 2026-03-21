@@ -41,6 +41,25 @@ Release engineering involves more than just bumping a version. You write commits
 - Multiple AI backends: Claude, GitHub Copilot, Gemini (auto-detected with fallback)
 - Commit plan caching for incremental re-analysis
 
+### Safety
+
+AI commands run with strict sandboxing to prevent the agent from modifying your repository:
+
+- **Read-only git access** — the agent can only run read-only git subcommands (`diff`, `log`, `show`, `status`, `ls-files`, `rev-parse`, `branch`, `cat-file`, `rev-list`, `shortlog`, `blame`). Mutating commands (`add`, `commit`, `push`, `reset`, `clean`, `rm`, `checkout`, etc.) are blocked at the tool-permission level.
+- **File reads only** — the agent can read files but cannot write, delete, or execute arbitrary commands.
+- **Working tree snapshots** — before the agent runs, `sr commit` saves a full snapshot of your working tree (staged files, unstaged changes, and untracked files). If anything goes wrong, the snapshot is automatically restored on failure. On success, the snapshot is cleared.
+- **All mutations are programmatic** — staging, committing, and branching are performed by sr's own code *after* the agent returns its plan, never by the agent itself.
+
+Snapshots are stored in the platform data directory, completely outside the repository:
+
+| Platform | Location |
+|----------|----------|
+| macOS | `~/Library/Application Support/sr/snapshots/<repo-id>/` |
+| Linux | `~/.local/share/sr/snapshots/<repo-id>/` |
+| Windows | `%LOCALAPPDATA%/sr/snapshots/<repo-id>/` |
+
+If a snapshot restore fails, the snapshot is preserved for manual recovery and its path is printed to stderr.
+
 ### Release automation
 - Conventional Commits parsing (built-in, configurable via `commit_pattern`)
 - `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer detection (in addition to `!` suffix)

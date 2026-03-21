@@ -12,6 +12,17 @@ AI backends, caching, and AI-powered git commands for [sr](https://github.com/ur
 - **Commands** — commit, review, explain, branch, pr, ask, cache
 - **Caching** — fingerprint-based commit plan caching with incremental re-analysis
 
+## Safety & Sandboxing
+
+All AI backends are sandboxed to prevent the agent from modifying the repository:
+
+- **Read-only git** — agents can only run `diff`, `log`, `show`, `status`, `ls-files`, `rev-parse`, `branch`, `cat-file`, `rev-list`, `shortlog`, `blame`. Mutating commands are blocked.
+- **No shell access** — agents cannot run arbitrary shell commands or delete files.
+- **Working tree snapshots** — `sr commit` snapshots the full working tree before invoking the agent. On failure, the snapshot is automatically restored. On success, it is cleared.
+- **Programmatic mutations** — all git writes (staging, committing) happen in sr's Rust code after the agent returns, never inside the agent.
+
+Snapshots are stored in the platform data directory (`~/.local/share/sr/snapshots/<repo-id>/` on Linux, `~/Library/Application Support/sr/snapshots/<repo-id>/` on macOS), keyed by a SHA-256 hash of the repository root path.
+
 ## AI Backends
 
 | Backend | CLI required | Env var | Default model |
