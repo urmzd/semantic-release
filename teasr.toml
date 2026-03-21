@@ -7,6 +7,9 @@ output_type = "png"
 [[output.formats]]
 output_type = "gif"
 
+[font]
+family = "Iosevka Nerd Font Mono"
+
 [[scenes]]
 type = "terminal"
 name = "sr-commit"
@@ -14,6 +17,11 @@ theme = "dracula"
 cols = 110
 rows = 40
 cwd = "."
+
+[scenes.intro]
+text = "sr commit\nAI-powered atomic commits"
+duration = 2000
+center = true
 
 [[scenes.interactions]]
 type = "type"
