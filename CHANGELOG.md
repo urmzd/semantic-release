@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.1.0 (2026-03-21)
+
+### Features
+
+- auto-detect version files in config and cli ([05d6f82](https://github.com/urmzd/sr/commit/05d6f82f2af810662946dd8f3dfc8bdb22e4c422))
+
+### Documentation
+
+- add demonstration screenshots ([9d78bd5](https://github.com/urmzd/sr/commit/9d78bd5e2cac5a93119770a455f157e207a29f57))
+
+### Refactoring
+
+- **release**: simplify supported file check using new abstraction ([452900b](https://github.com/urmzd/sr/commit/452900bd29e2b0fca3c9ef175390985c7e6f0535))
+- **core**: introduce VersionFileHandler trait for version file handling ([c1c6620](https://github.com/urmzd/sr/commit/c1c66208590d51955b20f2e964ffc12ce9c15cc4))
+
+### Miscellaneous
+
+- update teasr configuration ([ff22537](https://github.com/urmzd/sr/commit/ff22537b1419996864d48c090deb196ef6eaccea))
+
+[Full Changelog](https://github.com/urmzd/sr/compare/v2.0.0...v2.1.0)
+
+
 ## 2.0.0 (2026-03-21)
 
 ### Breaking Changes
