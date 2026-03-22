@@ -32,13 +32,10 @@ just check   # Run all checks (format, lint, test)
 
 This project uses a `commit-msg` hook to enforce Conventional Commits at commit time.
 
-### Native git hooks
+### Automatic hook management
 
-```bash
-just install-hooks   # sets core.hooksPath to .githooks/
-```
-
-This is included in `just init`, so new contributors get it automatically.
+Hooks are auto-synced from `sr.yaml` whenever you run `sr init`, `sr release`, or `sr commit`.
+New contributors get hooks automatically via `just init`.
 
 ### pre-commit framework
 

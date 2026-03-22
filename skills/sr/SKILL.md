@@ -46,7 +46,7 @@ Use `sr` to manage the full release lifecycle.
 | `sr changelog --write` | Write changelog to disk |
 | `sr version --short` | Print next version number |
 | `sr config --resolved` | Show resolved config with defaults |
-| `sr init` | Generate fully-commented sr.yaml + install hooks |
+| `sr init` | Generate fully-commented sr.yaml + sync hooks |
 | `sr init --merge` | Add new default fields to existing config |
 | `sr init --force` | Overwrite config with fresh commented template |
 

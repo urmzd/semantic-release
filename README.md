@@ -328,14 +328,12 @@ hooks:
 
 Structured steps only run when staged files match the `patterns` globs. Rules containing `{files}` receive the matched file list.
 
-Hooks are installed as thin wrappers in `.githooks/` that call `sr hook run <name>`:
+Hooks are automatically synced — `.githooks/` shims are created, updated, and removed to match `sr.yaml` whenever you run `sr init`, `sr release`, or `sr commit`:
 
 ```bash
-sr init              # writes fully-commented sr.yaml + installs hooks
+sr init              # writes fully-commented sr.yaml + syncs hooks
 sr init --merge      # add new default fields to existing sr.yaml without overwriting customizations
 sr init --force      # overwrite sr.yaml with a fresh fully-commented template
-sr init --no-hooks   # writes sr.yaml only (no hook installation)
-sr hook install      # re-install hooks after editing sr.yaml
 ```
 
 **JSON context** piped to each command (example for `commit-msg`):
@@ -446,7 +444,6 @@ All diagnostic messages go to stderr, so stdout is always clean JSON (or empty o
 | `sr config` | Validate and display resolved configuration |
 | `sr init` | Create a default `sr.yaml` config file |
 | `sr completions` | Generate shell completions (bash, zsh, fish, powershell, elvish) |
-| `sr hook` | Manage and run git hooks (`commit-msg`, `install`, `run`) |
 | `sr update` | Update sr to the latest version |
 
 ### Global flags
