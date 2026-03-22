@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.2.0 (2026-03-22)
+
+### Features
+
+- **release**: add v0 protection for breaking changes ([be1311f](https://github.com/urmzd/sr/commit/be1311fed03a6e78a50c4ef165bbd6f79bd747a2))
+
+### Documentation
+
+- add showcase section to README ([a84de47](https://github.com/urmzd/sr/commit/a84de47d983938f45adc8c69f32572392e9a76f2))
+
+### Miscellaneous
+
+- **showcase**: optimize demo images ([eb92755](https://github.com/urmzd/sr/commit/eb92755329fed9031310569dcabb2f14fbcc059d))
+- **lock**: update Cargo.lock for v2.1.0 ([d83d0c4](https://github.com/urmzd/sr/commit/d83d0c42bb0b6ba4baf31b2602e94d5be7446130))
+- **showcase**: update demo screenshots and animation ([ec7bbf1](https://github.com/urmzd/sr/commit/ec7bbf111ac8fdd7a65cb999a210e4071f83e9bc))
+- **config**: enhance teasr demo configuration ([00e653e](https://github.com/urmzd/sr/commit/00e653e21d93caf8a12a49efd49ab415d25d06f8))
+
+[Full Changelog](https://github.com/urmzd/sr/compare/v2.1.0...v2.2.0)
+
+
 ## 2.1.0 (2026-03-21)
 
 ### Features
