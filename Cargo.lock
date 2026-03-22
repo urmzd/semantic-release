@@ -1114,6 +1114,7 @@ dependencies = [
  "anyhow",
  "clap",
  "clap_complete",
+ "glob",
  "regex",
  "serde",
  "serde_json",

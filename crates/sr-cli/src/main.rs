@@ -5,7 +5,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use sr_ai::ai::{Backend, BackendConfig};
 use sr_core::changelog::DefaultChangelogFormatter;
 use sr_core::commit::DefaultCommitParser;
-use sr_core::config::{DEFAULT_CONFIG_FILE, LEGACY_CONFIG_FILE, ReleaseConfig};
+use sr_core::config::{DEFAULT_CONFIG_FILE, HookEntry, LEGACY_CONFIG_FILE, ReleaseConfig};
 use sr_core::error::ReleaseError;
 use sr_core::release::{ReleaseStrategy, TrunkReleaseStrategy, VcsProvider};
 use sr_git::NativeGitRepository;
@@ -132,6 +132,10 @@ enum Commands {
         /// Overwrite the config file if it already exists
         #[arg(long)]
         force: bool,
+
+        /// Merge new default fields into existing config without overwriting customizations
+        #[arg(long, conflicts_with = "force")]
+        merge: bool,
 
         /// Skip installing the commit-msg git hook
         #[arg(long)]
@@ -470,37 +474,128 @@ fn build_hook_json(hook_name: &str, args: &[String]) -> serde_json::Value {
     serde_json::Value::Object(obj)
 }
 
-/// Run all commands for a configured hook, piping the JSON context to each via stdin.
+/// Get staged files from git (excluding deletes).
+fn staged_files() -> anyhow::Result<Vec<String>> {
+    let output = std::process::Command::new("git")
+        .args(["diff", "--cached", "--name-only", "--diff-filter=ACMR"])
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.to_string())
+        .collect())
+}
+
+/// Match files against glob patterns. Matches against both the full path and the basename.
+fn match_files(files: &[String], patterns: &[String]) -> Vec<String> {
+    let compiled: Vec<glob::Pattern> = patterns
+        .iter()
+        .filter_map(|p| glob::Pattern::new(p).ok())
+        .collect();
+
+    files
+        .iter()
+        .filter(|f| {
+            let basename = Path::new(f)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(f);
+            compiled
+                .iter()
+                .any(|pat| pat.matches(f) || pat.matches(basename))
+        })
+        .cloned()
+        .collect()
+}
+
+/// Run a single shell command, optionally piping JSON context to stdin.
+fn run_shell_cmd(cmd: &str, json_str: Option<&str>) -> anyhow::Result<()> {
+    let status = std::process::Command::new("sh")
+        .args(["-c", cmd])
+        .stdin(if json_str.is_some() {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::inherit()
+        })
+        .spawn()
+        .and_then(|mut child| {
+            if let Some(json) = json_str
+                && let Some(ref mut stdin) = child.stdin
+            {
+                use std::io::Write;
+                let _ = stdin.write_all(json.as_bytes());
+            }
+            child.wait()
+        })?;
+
+    if !status.success() {
+        let code = status.code().unwrap_or(1);
+        std::process::exit(code);
+    }
+
+    Ok(())
+}
+
+/// Run all entries for a configured hook.
+///
+/// Simple entries run as shell commands with JSON context piped to stdin.
+/// Step entries match staged files against patterns and run rules only when matches exist.
+/// Rules containing `{files}` receive the matched file list.
 fn run_hook(config: &ReleaseConfig, hook_name: &str, args: &[String]) -> anyhow::Result<()> {
-    let commands = config
+    let entries = config
         .hooks
         .hooks
         .get(hook_name)
         .ok_or_else(|| anyhow::anyhow!("no hook configured for '{hook_name}'"))?;
 
-    if commands.is_empty() {
+    if entries.is_empty() {
         return Ok(());
     }
 
     let json = build_hook_json(hook_name, args);
     let json_str = serde_json::to_string(&json)?;
 
-    for cmd in commands {
-        let status = std::process::Command::new("sh")
-            .args(["-c", cmd])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut child| {
-                if let Some(ref mut stdin) = child.stdin {
-                    use std::io::Write;
-                    let _ = stdin.write_all(json_str.as_bytes());
-                }
-                child.wait()
-            })?;
+    // Lazily fetch staged files only when a Step entry needs them.
+    let mut cached_staged: Option<Vec<String>> = None;
 
-        if !status.success() {
-            let code = status.code().unwrap_or(1);
-            std::process::exit(code);
+    for entry in entries {
+        match entry {
+            HookEntry::Simple(cmd) => {
+                run_shell_cmd(cmd, Some(&json_str))?;
+            }
+            HookEntry::Step {
+                step,
+                patterns,
+                rules,
+            } => {
+                let all_staged =
+                    cached_staged.get_or_insert_with(|| staged_files().unwrap_or_default());
+
+                if all_staged.is_empty() {
+                    eprintln!("{hook_name}: no staged files, skipping.");
+                    return Ok(());
+                }
+
+                let matched = match_files(all_staged, patterns);
+                if matched.is_empty() {
+                    eprintln!("{hook_name} [{step}]: no files match {patterns:?}, skipping.");
+                    continue;
+                }
+
+                let files_str = matched.join(" ");
+
+                for rule in rules {
+                    let cmd = if rule.contains("{files}") {
+                        rule.replace("{files}", &files_str)
+                    } else {
+                        rule.clone()
+                    };
+
+                    eprintln!("{hook_name} [{step}]: {cmd}");
+                    run_shell_cmd(&cmd, None)?;
+                }
+            }
         }
     }
 
@@ -610,14 +705,18 @@ async fn run() -> anyhow::Result<()> {
     };
 
     match cli.command {
-        Commands::Init { force, no_hooks } => {
+        Commands::Init {
+            force,
+            merge,
+            no_hooks,
+        } => {
             let path = Path::new(DEFAULT_CONFIG_FILE);
 
-            if path.exists() && !force {
-                anyhow::bail!("{DEFAULT_CONFIG_FILE} already exists (use --force to overwrite)");
+            if path.exists() && !force && !merge {
+                anyhow::bail!(
+                    "{DEFAULT_CONFIG_FILE} already exists (use --force to overwrite, or --merge to add new fields)"
+                );
             }
-
-            let mut config = ReleaseConfig::default();
 
             // Auto-detect version files in the current directory
             let detected = sr_core::version_files::detect_version_files(Path::new("."));
@@ -625,15 +724,21 @@ async fn run() -> anyhow::Result<()> {
                 for f in &detected {
                     eprintln!("detected version file: {f}");
                 }
-                config.version_files = detected;
             }
 
-            let yaml = serde_yaml_ng::to_string(&config)?;
-            std::fs::write(path, yaml)?;
-
-            eprintln!("wrote {DEFAULT_CONFIG_FILE}");
+            if merge && path.exists() {
+                let existing = std::fs::read_to_string(path)?;
+                let merged = sr_core::config::merge_config_yaml(&existing)?;
+                std::fs::write(path, merged)?;
+                eprintln!("merged new defaults into {DEFAULT_CONFIG_FILE}");
+            } else {
+                let template = sr_core::config::default_config_template(&detected);
+                std::fs::write(path, template)?;
+                eprintln!("wrote {DEFAULT_CONFIG_FILE}");
+            }
 
             if !no_hooks {
+                let config = ReleaseConfig::load(path)?;
                 install_hooks(&config)?;
             }
 
