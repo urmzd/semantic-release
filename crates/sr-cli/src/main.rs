@@ -148,6 +148,9 @@ enum Commands {
     /// Generate atomic commits from changes
     Commit(sr_ai::commands::commit::CommitArgs),
 
+    /// AI-powered interactive rebase (reword, squash, reorder commits)
+    Rebase(sr_ai::commands::rebase::RebaseArgs),
+
     /// AI code review of staged/branch changes
     Review(sr_ai::commands::review::ReviewArgs),
 
@@ -1028,6 +1031,7 @@ async fn run() -> anyhow::Result<()> {
             ensure_hooks_synced();
             sr_ai::commands::commit::run(&args, &backend_config).await
         }
+        Commands::Rebase(args) => sr_ai::commands::rebase::run(&args, &backend_config).await,
         Commands::Review(args) => sr_ai::commands::review::run(&args, &backend_config).await,
         Commands::Explain(args) => sr_ai::commands::explain::run(&args, &backend_config).await,
         Commands::Branch(args) => sr_ai::commands::branch::run(&args, &backend_config).await,
