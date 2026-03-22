@@ -1,10 +1,8 @@
 default: check
 
-install-hooks:
-    git config core.hooksPath .githooks
-
-init: install-hooks
+init:
     rustup component add clippy rustfmt
+    cargo run -p sr-cli -- init --merge 2>/dev/null || cargo run -p sr-cli -- init
 
 install:
     cargo install --path crates/sr-cli
