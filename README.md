@@ -15,6 +15,12 @@
   <a href="https://github.com/urmzd/sr/actions/workflows/ci.yml"><img src="https://github.com/urmzd/sr/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
+## Showcase
+
+<p align="center">
+  <img src="showcase/sr-commit.gif" alt="sr commit demo" width="600">
+</p>
+
 ## Why?
 
 Release engineering involves more than just bumping a version. You write commits, review code, create PRs, and then cut a release. Most tools only handle the last step — and even then require Node.js and a pile of plugins.
