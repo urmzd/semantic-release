@@ -1,14 +1,28 @@
+# sr configuration
+# Full reference: https://github.com/urmzd/sr#configuration
+
+# Branches that trigger releases when commits are pushed.
 branches:
   - main
 
+# Prefix prepended to version tags (e.g. "v1.2.0").
 tag_prefix: "v"
 
+# Regex for parsing conventional commits.
+# Required named groups: type, description.
+# Optional named groups: scope, breaking.
 commit_pattern: '^(?P<type>\w+)(?:\((?P<scope>[^)]+)\))?(?P<breaking>!)?:\s+(?P<description>.+)'
 
+# Changelog section heading for breaking changes.
 breaking_section: Breaking Changes
 
+# Fallback changelog section for unrecognised commit types.
 misc_section: Miscellaneous
 
+# Commit type definitions.
+# name:    commit type prefix (e.g. "feat", "fix")
+# bump:    version bump level — major, minor, patch, or omit for no bump
+# section: changelog section heading, or omit to exclude from changelog
 types:
   - name: feat
     bump: minor
@@ -32,11 +46,75 @@ types:
   - name: build
   - name: style
 
+# Changelog configuration.
+# file:     path to the changelog file (e.g. CHANGELOG.md), or omit to skip writing
+# template: custom Minijinja template string for changelog rendering
+changelog:
+  file: CHANGELOG.md
+  template:
+
+# Manifest files to bump on release (e.g. Cargo.toml, package.json, pyproject.toml).
+# Auto-detected if empty.
 version_files:
   - Cargo.toml
 
-changelog:
-  file: CHANGELOG.md
+# Fail if a version file uses an unsupported format (default: skip unknown files).
+version_files_strict: false
 
+# Glob patterns for release assets to upload to GitHub (e.g. "dist/*.tar.gz").
+artifacts: []
+
+# Create floating major version tags (e.g. "v3" pointing to latest v3.x.x).
 floating_tags: true
 
+# Shell command to run after version files are bumped (e.g. "cargo build --release").
+build_command:
+
+# Additional files/globs to stage after build_command runs (e.g. Cargo.lock).
+stage_files: []
+
+# Pre-release identifier (e.g. "alpha", "beta", "rc").
+# When set, versions are formatted as X.Y.Z-<id>.N where N auto-increments.
+prerelease:
+
+# Shell command to run before the release starts (validation, checks).
+pre_release_command:
+
+# Shell command to run after the release completes (notifications, deployments).
+post_release_command:
+
+# Sign annotated tags with GPG/SSH (git tag -s).
+sign_tags: false
+
+# Create GitHub releases as drafts (requires manual publishing).
+draft: false
+
+# Minijinja template for the GitHub release name.
+# Available variables: version, tag_name, tag_prefix.
+# Default: uses the tag name (e.g. "v1.2.0").
+release_name_template:
+
+# Git hooks configuration.
+# Each key is a git hook name. Values can be simple commands or structured steps.
+# Steps with patterns only run when staged files match the globs.
+# Rules containing {files} receive the matched file list.
+# Hook scripts are generated in .githooks/ by "sr init".
+hooks:
+  commit-msg:
+    - sr hook commit-msg
+  pre-commit:
+    - step: format
+      patterns:
+        - "*.rs"
+      rules:
+        - "rustfmt --check --edition 2024 {files}"
+    - step: lint
+      patterns:
+        - "*.rs"
+      rules:
+        - "cargo clippy --workspace -- -D warnings"
+    - step: test
+      patterns:
+        - "*.rs"
+      rules:
+        - "cargo test --workspace"
