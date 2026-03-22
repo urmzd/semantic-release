@@ -12,7 +12,7 @@ GitHub VCS provider for [sr](https://github.com/urmzd/sr) — backed by the GitH
 
 ```toml
 [dependencies]
-sr-github = "1"
+sr-github = "2"
 ```
 
 ### Creating a provider

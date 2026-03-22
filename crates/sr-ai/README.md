@@ -9,7 +9,7 @@ AI backends, caching, and AI-powered git commands for [sr](https://github.com/ur
 `sr-ai` provides the AI layer for sr. It includes:
 
 - **AI backends** — Claude, GitHub Copilot, and Gemini with automatic detection and fallback
-- **Commands** — commit, review, explain, branch, pr, ask, cache
+- **Commands** — commit, rebase, review, explain, branch, pr, ask, cache
 - **Caching** — fingerprint-based commit plan caching with incremental re-analysis
 
 ## Safety & Sandboxing
@@ -38,6 +38,7 @@ Backends are auto-detected in order: Claude, Copilot, Gemini. Use `--backend` or
 | Command | Description |
 |---------|-------------|
 | `commit` | Analyze changes and generate atomic conventional commits |
+| `rebase` | AI-powered interactive rebase (reword, squash, reorder commits) |
 | `review` | AI code review with severity-based feedback |
 | `explain` | Explain what a commit does and why |
 | `branch` | Suggest a conventional branch name |
@@ -60,7 +61,7 @@ This crate is used as a library by `sr-cli`. It is not intended to be used direc
 
 ```toml
 [dependencies]
-sr-ai = "1"
+sr-ai = "2"
 ```
 
 ## Prerequisites

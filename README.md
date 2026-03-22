@@ -39,6 +39,7 @@ Release engineering involves more than just bumping a version. You write commits
 
 ### AI-powered workflow
 - AI commit generation with atomic grouping and conventional commit format (`sr commit`)
+- AI-powered interactive rebase — reword, squash, reorder commits (`sr rebase`)
 - AI code review with severity-based feedback (`sr review`)
 - AI PR title + body generation (`sr pr`)
 - AI branch name suggestions (`sr branch`)
@@ -195,7 +196,7 @@ jobs:
 
 | Input | Description | Default |
 |-------|-------------|---------|
-| `command` | The `sr` subcommand to run (`release`, `plan`, `changelog`, `version`, `config`, `completions`, `commit`, `review`, `explain`, `branch`, `pr`, `ask`, `cache`) | `release` |
+| `command` | The `sr` subcommand to run (`release`, `plan`, `changelog`, `version`, `config`, `completions`, `commit`, `rebase`, `review`, `explain`, `branch`, `pr`, `ask`, `cache`) | `release` |
 | `dry-run` | Preview changes without executing them | `false` |
 | `force` | Re-release the current tag (use when a previous release partially failed) | `false` |
 | `config` | Path to the config file | `sr.yaml` |
@@ -426,6 +427,7 @@ All diagnostic messages go to stderr, so stdout is always clean JSON (or empty o
 | Command | Description |
 |---------|-------------|
 | `sr commit` | Generate atomic commits from changes (AI-powered) |
+| `sr rebase` | AI-powered interactive rebase (reword, squash, reorder commits) |
 | `sr review` | AI code review of staged/branch changes |
 | `sr explain` | Explain recent commits |
 | `sr branch` | Suggest conventional branch name |
@@ -464,6 +466,10 @@ All commands accept these flags for AI backend configuration:
 - `sr commit --yes` — skip confirmation prompt
 - `sr commit --no-cache` — bypass cache, always call AI
 - `sr commit -M "context"` — provide additional context for commit generation
+- `sr rebase --dry-run` — preview rebase plan without executing
+- `sr rebase --yes` — skip confirmation prompt
+- `sr rebase --last 5` — reorganize the last 5 commits (default: auto-detect since last tag)
+- `sr rebase -M "context"` — provide additional instructions for reorganization
 - `sr review --base main` — review against a specific base ref
 - `sr pr --create` — create the PR via gh CLI
 - `sr pr --draft` — create as draft PR

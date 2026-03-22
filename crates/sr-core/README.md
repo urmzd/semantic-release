@@ -1,6 +1,6 @@
 # sr-core
 
-Pure domain logic for [sr](https://github.com/urmzd/sr) — a single-binary semantic release tool.
+Pure domain logic for [sr](https://github.com/urmzd/sr) — an AI-powered release engineering CLI.
 
 [![crates.io](https://img.shields.io/crates/v/sr-core.svg)](https://crates.io/crates/sr-core)
 
@@ -46,7 +46,7 @@ Add `sr-core` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sr-core = "2.1"
+sr-core = "2"
 ```
 
 ### Building a custom release strategy

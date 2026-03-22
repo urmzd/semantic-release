@@ -12,7 +12,7 @@ Git operations for [sr](https://github.com/urmzd/sr) — backed by the native `g
 
 ```toml
 [dependencies]
-sr-git = "0.1"
+sr-git = "2"
 ```
 
 ### Opening a repository

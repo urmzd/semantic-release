@@ -48,6 +48,7 @@ sr release
 | Command | Description |
 |---------|-------------|
 | `sr commit` | Generate atomic commits from changes (AI-powered) |
+| `sr rebase` | AI-powered interactive rebase (reword, squash, reorder) |
 | `sr review` | AI code review of staged/branch changes |
 | `sr explain` | Explain recent commits |
 | `sr branch` | Suggest conventional branch name |

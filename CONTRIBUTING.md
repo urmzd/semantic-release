@@ -44,7 +44,7 @@ If you use the [pre-commit](https://pre-commit.com/) framework, add to your `.pr
 ```yaml
 repos:
   - repo: https://github.com/urmzd/sr
-    rev: v2.1.0
+    rev: v2.2.0
     hooks:
       - id: conventional-commit-msg
 ```
