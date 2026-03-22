@@ -12,3 +12,6 @@
 .DS_Store
 .claude/
 .env.*
+
+# Hook sync state (machine-local)
+.githooks/.sr-hooks-hash
