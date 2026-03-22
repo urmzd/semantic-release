@@ -191,6 +191,35 @@ impl GitRepo {
         Ok(out.trim().to_string())
     }
 
+    /// Count commits since the last tag. If no tags exist, counts all commits.
+    pub fn commits_since_last_tag(&self) -> Result<usize> {
+        // Try to find the most recent tag
+        let (ok, tag) = self.git_allow_failure(&["describe", "--tags", "--abbrev=0"])?;
+        let tag = tag.trim();
+
+        let out = if ok && !tag.is_empty() {
+            self.git(&["rev-list", &format!("{tag}..HEAD"), "--count"])?
+        } else {
+            self.git(&["rev-list", "HEAD", "--count"])?
+        };
+
+        out.trim()
+            .parse::<usize>()
+            .context("failed to parse commit count")
+    }
+
+    /// Get detailed log of recent commits (SHA, subject, body) oldest first.
+    pub fn log_detailed(&self, count: usize) -> Result<String> {
+        let out = self.git(&[
+            "--no-pager",
+            "log",
+            "--reverse",
+            &format!("-{count}"),
+            "--format=%h %s%n%b%n---",
+        ])?;
+        Ok(out)
+    }
+
     pub fn file_statuses(&self) -> Result<HashMap<String, char>> {
         let out = self.git(&["status", "--porcelain"])?;
         let mut map = HashMap::new();
