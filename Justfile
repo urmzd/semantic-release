@@ -7,7 +7,7 @@ init: install-hooks
     rustup component add clippy rustfmt
 
 install:
-    cargo build --release -p sr-cli
+    cargo install --path crates/sr-cli
 
 build:
     cargo build --workspace
