@@ -622,16 +622,18 @@ packages:
 
     #[test]
     fn resolve_package_defaults() {
-        let mut config = ReleaseConfig::default();
-        config.packages = vec![PackageConfig {
-            name: "core".into(),
-            path: "crates/core".into(),
-            tag_prefix: None,
-            version_files: vec![],
-            changelog: None,
-            build_command: None,
-            stage_files: vec![],
-        }];
+        let config = ReleaseConfig {
+            packages: vec![PackageConfig {
+                name: "core".into(),
+                path: "crates/core".into(),
+                tag_prefix: None,
+                version_files: vec![],
+                changelog: None,
+                build_command: None,
+                stage_files: vec![],
+            }],
+            ..Default::default()
+        };
 
         let resolved = config.resolve_package(&config.packages[0]);
         assert_eq!(resolved.tag_prefix, "core/v");
@@ -643,20 +645,22 @@ packages:
 
     #[test]
     fn resolve_package_overrides() {
-        let mut config = ReleaseConfig::default();
-        config.version_files = vec!["Cargo.toml".into()];
-        config.packages = vec![PackageConfig {
-            name: "cli".into(),
-            path: "crates/cli".into(),
-            tag_prefix: Some("cli-v".into()),
-            version_files: vec!["crates/cli/Cargo.toml".into()],
-            changelog: Some(ChangelogConfig {
-                file: Some("crates/cli/CHANGELOG.md".into()),
-                template: None,
-            }),
-            build_command: Some("cargo build -p cli".into()),
-            stage_files: vec!["crates/cli/Cargo.lock".into()],
-        }];
+        let config = ReleaseConfig {
+            version_files: vec!["Cargo.toml".into()],
+            packages: vec![PackageConfig {
+                name: "cli".into(),
+                path: "crates/cli".into(),
+                tag_prefix: Some("cli-v".into()),
+                version_files: vec!["crates/cli/Cargo.toml".into()],
+                changelog: Some(ChangelogConfig {
+                    file: Some("crates/cli/CHANGELOG.md".into()),
+                    template: None,
+                }),
+                build_command: Some("cargo build -p cli".into()),
+                stage_files: vec!["crates/cli/Cargo.lock".into()],
+            }],
+            ..Default::default()
+        };
 
         let resolved = config.resolve_package(&config.packages[0]);
         assert_eq!(resolved.tag_prefix, "cli-v");
@@ -674,16 +678,18 @@ packages:
 
     #[test]
     fn find_package_found() {
-        let mut config = ReleaseConfig::default();
-        config.packages = vec![PackageConfig {
-            name: "core".into(),
-            path: "crates/core".into(),
-            tag_prefix: None,
-            version_files: vec![],
-            changelog: None,
-            build_command: None,
-            stage_files: vec![],
-        }];
+        let config = ReleaseConfig {
+            packages: vec![PackageConfig {
+                name: "core".into(),
+                path: "crates/core".into(),
+                tag_prefix: None,
+                version_files: vec![],
+                changelog: None,
+                build_command: None,
+                stage_files: vec![],
+            }],
+            ..Default::default()
+        };
 
         let pkg = config.find_package("core").unwrap();
         assert_eq!(pkg.name, "core");

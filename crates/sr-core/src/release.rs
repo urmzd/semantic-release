@@ -1144,8 +1144,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let changelog_path = dir.path().join("CHANGELOG.md");
 
-        let mut config = ReleaseConfig::default();
-        config.changelog.file = Some(changelog_path.to_str().unwrap().to_string());
+        let config = ReleaseConfig {
+            changelog: crate::config::ChangelogConfig {
+                file: Some(changelog_path.to_str().unwrap().to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1260,8 +1265,10 @@ mod tests {
         )
         .unwrap();
 
-        let mut config = ReleaseConfig::default();
-        config.version_files = vec![cargo_path.to_str().unwrap().to_string()];
+        let config = ReleaseConfig {
+            version_files: vec![cargo_path.to_str().unwrap().to_string()],
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1293,9 +1300,14 @@ mod tests {
 
         let changelog_path = dir.path().join("CHANGELOG.md");
 
-        let mut config = ReleaseConfig::default();
-        config.changelog.file = Some(changelog_path.to_str().unwrap().to_string());
-        config.version_files = vec![cargo_path.to_str().unwrap().to_string()];
+        let config = ReleaseConfig {
+            changelog: crate::config::ChangelogConfig {
+                file: Some(changelog_path.to_str().unwrap().to_string()),
+                ..Default::default()
+            },
+            version_files: vec![cargo_path.to_str().unwrap().to_string()],
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1324,11 +1336,13 @@ mod tests {
         std::fs::write(dir.path().join("app.tar.gz"), "fake tarball").unwrap();
         std::fs::write(dir.path().join("app.zip"), "fake zip").unwrap();
 
-        let mut config = ReleaseConfig::default();
-        config.artifacts = vec![
-            dir.path().join("*.tar.gz").to_str().unwrap().to_string(),
-            dir.path().join("*.zip").to_str().unwrap().to_string(),
-        ];
+        let config = ReleaseConfig {
+            artifacts: vec![
+                dir.path().join("*.tar.gz").to_str().unwrap().to_string(),
+                dir.path().join("*.zip").to_str().unwrap().to_string(),
+            ],
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1355,8 +1369,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("app.tar.gz"), "fake tarball").unwrap();
 
-        let mut config = ReleaseConfig::default();
-        config.artifacts = vec![dir.path().join("*.tar.gz").to_str().unwrap().to_string()];
+        let config = ReleaseConfig {
+            artifacts: vec![dir.path().join("*.tar.gz").to_str().unwrap().to_string()],
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1415,8 +1431,10 @@ mod tests {
             version: Version::new(3, 2, 0),
             sha: "d".repeat(40),
         };
-        let mut config = ReleaseConfig::default();
-        config.floating_tags = true;
+        let config = ReleaseConfig {
+            floating_tags: true,
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![tag], vec![raw_commit("fix: patch")], config);
         let plan = s.plan().unwrap();
@@ -1442,9 +1460,11 @@ mod tests {
             version: Version::new(2, 5, 0),
             sha: "e".repeat(40),
         };
-        let mut config = ReleaseConfig::default();
-        config.floating_tags = true;
-        config.tag_prefix = "release-".into();
+        let config = ReleaseConfig {
+            floating_tags: true,
+            tag_prefix: "release-".into(),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![tag], vec![raw_commit("fix: patch")], config);
         let plan = s.plan().unwrap();
@@ -1453,8 +1473,10 @@ mod tests {
 
     #[test]
     fn execute_floating_tags_force_create_and_push() {
-        let mut config = ReleaseConfig::default();
-        config.floating_tags = true;
+        let config = ReleaseConfig {
+            floating_tags: true,
+            ..Default::default()
+        };
 
         let tag = TagInfo {
             name: "v1.2.3".into(),
@@ -1489,8 +1511,10 @@ mod tests {
 
     #[test]
     fn execute_floating_tags_dry_run_no_side_effects() {
-        let mut config = ReleaseConfig::default();
-        config.floating_tags = true;
+        let config = ReleaseConfig {
+            floating_tags: true,
+            ..Default::default()
+        };
 
         let tag = TagInfo {
             name: "v2.0.0".into(),
@@ -1509,8 +1533,10 @@ mod tests {
 
     #[test]
     fn execute_floating_tags_idempotent() {
-        let mut config = ReleaseConfig::default();
-        config.floating_tags = true;
+        let config = ReleaseConfig {
+            floating_tags: true,
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1569,11 +1595,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let output_file = dir.path().join("sr_test_version");
 
-        let mut config = ReleaseConfig::default();
-        config.build_command = Some(format!(
-            "echo $SR_VERSION > {}",
-            output_file.to_str().unwrap()
-        ));
+        let config = ReleaseConfig {
+            build_command: Some(format!(
+                "echo $SR_VERSION > {}",
+                output_file.to_str().unwrap()
+            )),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1585,8 +1613,10 @@ mod tests {
 
     #[test]
     fn execute_build_command_failure_aborts_release() {
-        let mut config = ReleaseConfig::default();
-        config.build_command = Some("exit 1".into());
+        let config = ReleaseConfig {
+            build_command: Some("exit 1".into()),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1601,8 +1631,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let output_file = dir.path().join("sr_test_should_not_exist");
 
-        let mut config = ReleaseConfig::default();
-        config.build_command = Some(format!("echo test > {}", output_file.to_str().unwrap()));
+        let config = ReleaseConfig {
+            build_command: Some(format!("echo test > {}", output_file.to_str().unwrap())),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1628,9 +1660,11 @@ mod tests {
         let lock_file = dir.path().join("Cargo.lock");
         std::fs::write(&lock_file, "old lock").unwrap();
 
-        let mut config = ReleaseConfig::default();
-        config.build_command = Some(format!("echo 'new lock' > {}", lock_file.to_str().unwrap()));
-        config.stage_files = vec![lock_file.to_str().unwrap().to_string()];
+        let config = ReleaseConfig {
+            build_command: Some(format!("echo 'new lock' > {}", lock_file.to_str().unwrap())),
+            stage_files: vec![lock_file.to_str().unwrap().to_string()],
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1647,8 +1681,10 @@ mod tests {
 
     #[test]
     fn execute_dry_run_shows_stage_files() {
-        let mut config = ReleaseConfig::default();
-        config.stage_files = vec!["Cargo.lock".into()];
+        let config = ReleaseConfig {
+            stage_files: vec!["Cargo.lock".into()],
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1668,9 +1704,11 @@ mod tests {
         )
         .unwrap();
 
-        let mut config = ReleaseConfig::default();
-        config.version_files = vec![cargo_toml.to_str().unwrap().to_string()];
-        config.build_command = Some("exit 1".into());
+        let config = ReleaseConfig {
+            version_files: vec![cargo_toml.to_str().unwrap().to_string()],
+            build_command: Some("exit 1".into()),
+            ..Default::default()
+        };
 
         let tag = TagInfo {
             name: "v1.0.0".into(),
@@ -1697,8 +1735,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("pre_release_ran");
 
-        let mut config = ReleaseConfig::default();
-        config.pre_release_command = Some(format!("touch {}", marker.to_str().unwrap()));
+        let config = ReleaseConfig {
+            pre_release_command: Some(format!("touch {}", marker.to_str().unwrap())),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1712,8 +1752,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("post_release_ran");
 
-        let mut config = ReleaseConfig::default();
-        config.post_release_command = Some(format!("touch {}", marker.to_str().unwrap()));
+        let config = ReleaseConfig {
+            post_release_command: Some(format!("touch {}", marker.to_str().unwrap())),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1724,8 +1766,10 @@ mod tests {
 
     #[test]
     fn execute_pre_release_failure_aborts_release() {
-        let mut config = ReleaseConfig::default();
-        config.pre_release_command = Some("exit 1".into());
+        let config = ReleaseConfig {
+            pre_release_command: Some("exit 1".into()),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1742,11 +1786,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let output_file = dir.path().join("hook_output");
 
-        let mut config = ReleaseConfig::default();
-        config.post_release_command = Some(format!(
-            "echo $SR_VERSION $SR_TAG > {}",
-            output_file.to_str().unwrap()
-        ));
+        let config = ReleaseConfig {
+            post_release_command: Some(format!(
+                "echo $SR_VERSION $SR_TAG > {}",
+                output_file.to_str().unwrap()
+            )),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1763,9 +1809,11 @@ mod tests {
         let pre_marker = dir.path().join("pre_hook");
         let post_marker = dir.path().join("post_hook");
 
-        let mut config = ReleaseConfig::default();
-        config.pre_release_command = Some(format!("touch {}", pre_marker.to_str().unwrap()));
-        config.post_release_command = Some(format!("touch {}", post_marker.to_str().unwrap()));
+        let config = ReleaseConfig {
+            pre_release_command: Some(format!("touch {}", pre_marker.to_str().unwrap())),
+            post_release_command: Some(format!("touch {}", post_marker.to_str().unwrap())),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1785,8 +1833,10 @@ mod tests {
 
     #[test]
     fn plan_prerelease_first_release() {
-        let mut config = ReleaseConfig::default();
-        config.prerelease = Some("alpha".into());
+        let config = ReleaseConfig {
+            prerelease: Some("alpha".into()),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1802,8 +1852,10 @@ mod tests {
             version: Version::new(1, 0, 0),
             sha: "d".repeat(40),
         };
-        let mut config = ReleaseConfig::default();
-        config.prerelease = Some("beta".into());
+        let config = ReleaseConfig {
+            prerelease: Some("beta".into()),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![tag], vec![raw_commit("feat: new feature")], config);
         let plan = s.plan().unwrap();
@@ -1830,8 +1882,10 @@ mod tests {
                 sha: "c".repeat(40),
             },
         ];
-        let mut config = ReleaseConfig::default();
-        config.prerelease = Some("alpha".into());
+        let config = ReleaseConfig {
+            prerelease: Some("alpha".into()),
+            ..Default::default()
+        };
 
         let s = make_strategy(tags, vec![raw_commit("feat: another")], config);
         let plan = s.plan().unwrap();
@@ -1852,8 +1906,10 @@ mod tests {
                 sha: "b".repeat(40),
             },
         ];
-        let mut config = ReleaseConfig::default();
-        config.prerelease = Some("beta".into());
+        let config = ReleaseConfig {
+            prerelease: Some("beta".into()),
+            ..Default::default()
+        };
 
         let s = make_strategy(tags, vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1862,9 +1918,11 @@ mod tests {
 
     #[test]
     fn plan_prerelease_no_floating_tags() {
-        let mut config = ReleaseConfig::default();
-        config.prerelease = Some("rc".into());
-        config.floating_tags = true;
+        let config = ReleaseConfig {
+            prerelease: Some("rc".into()),
+            floating_tags: true,
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         let plan = s.plan().unwrap();
@@ -1902,8 +1960,10 @@ mod tests {
 
     #[test]
     fn plan_prerelease_marks_plan_as_prerelease() {
-        let mut config = ReleaseConfig::default();
-        config.prerelease = Some("alpha".into());
+        let config = ReleaseConfig {
+            prerelease: Some("alpha".into()),
+            ..Default::default()
+        };
 
         let s = make_strategy(vec![], vec![raw_commit("fix: bug")], config);
         let plan = s.plan().unwrap();
@@ -1915,8 +1975,10 @@ mod tests {
 
     #[test]
     fn plan_with_path_filter_uses_filtered_commits() {
-        let mut config = ReleaseConfig::default();
-        config.path_filter = Some("crates/core".into());
+        let config = ReleaseConfig {
+            path_filter: Some("crates/core".into()),
+            ..Default::default()
+        };
 
         // All commits include a feat, but path-filtered commits only have a fix
         let mut s = make_strategy(
@@ -1947,8 +2009,10 @@ mod tests {
 
     #[test]
     fn plan_with_path_filter_no_commits_returns_error() {
-        let mut config = ReleaseConfig::default();
-        config.path_filter = Some("crates/core".into());
+        let config = ReleaseConfig {
+            path_filter: Some("crates/core".into()),
+            ..Default::default()
+        };
 
         let mut s = make_strategy(vec![], vec![raw_commit("feat: something")], config);
         s.git.path_commits = Some(vec![]);
@@ -1959,9 +2023,11 @@ mod tests {
 
     #[test]
     fn plan_with_path_filter_custom_tag_prefix() {
-        let mut config = ReleaseConfig::default();
-        config.path_filter = Some("crates/core".into());
-        config.tag_prefix = "core/v".into();
+        let config = ReleaseConfig {
+            path_filter: Some("crates/core".into()),
+            tag_prefix: "core/v".into(),
+            ..Default::default()
+        };
 
         let tag = TagInfo {
             name: "core/v1.0.0".into(),
