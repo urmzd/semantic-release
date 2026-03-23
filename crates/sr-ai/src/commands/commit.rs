@@ -270,6 +270,7 @@ pub async fn run(args: &CommitArgs, backend_config: &BackendConfig) -> Result<()
     if args.dry_run {
         ui::info("Dry run — no commits created");
         println!();
+        snapshot.success();
         return Ok(());
     }
 
