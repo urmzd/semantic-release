@@ -484,19 +484,8 @@ fn execute_plan(repo: &GitRepo, plan: &CommitPlan) -> Result<()> {
     // Unstage everything first
     repo.reset_head()?;
 
-    // Collect all files belonging to future commits so we can hide them from
-    // pre-commit hooks. Hooks like `golangci-lint run ./...` or `go test ./...`
-    // scan the entire working tree, not just staged files. If future-commit
-    // files are visible on disk, the project may be in an inconsistent state
-    // (e.g. go.mod updated but new source files not yet committed) and the
-    // hook will fail.
-    let all_plan_files: Vec<Vec<String>> = plan.commits.iter().map(|c| c.files.clone()).collect();
-
     let total = plan.commits.len();
     let mut created: Vec<(String, String)> = Vec::new();
-
-    // Build a temp dir outside the repo to stash future-commit files
-    let stash_dir = tempfile::tempdir().context("failed to create temp dir for commit stash")?;
 
     for (i, commit) in plan.commits.iter().enumerate() {
         ui::commit_start(i + 1, total, &commit.message);
@@ -506,14 +495,6 @@ fn execute_plan(repo: &GitRepo, plan: &CommitPlan) -> Result<()> {
             let ok = repo.stage_file(file)?;
             ui::file_staged(file, ok);
         }
-
-        // Hide files belonging to future commits so hooks see a consistent tree
-        let future_files: Vec<&str> = all_plan_files[i + 1..]
-            .iter()
-            .flatten()
-            .map(|s| s.as_str())
-            .collect();
-        let hidden = hide_files(repo.root(), &future_files, stash_dir.path());
 
         // Build full commit message
         let mut full_message = commit.message.clone();
@@ -531,64 +512,19 @@ fn execute_plan(repo: &GitRepo, plan: &CommitPlan) -> Result<()> {
         }
 
         // Create commit (only if there are staged files)
-        let result = if repo.has_staged_after_add()? {
-            repo.commit(&full_message)
+        if repo.has_staged_after_add()? {
+            repo.commit(&full_message)?;
+            let sha = repo.head_short().unwrap_or_else(|_| "???????".to_string());
+            ui::commit_created(&sha);
+            created.push((sha, commit.message.clone()));
         } else {
             ui::commit_skipped();
-            Ok(())
-        };
-
-        // Restore hidden files before checking for errors
-        restore_files(repo.root(), &hidden, stash_dir.path());
-
-        result?;
-
-        let sha = repo.head_short().unwrap_or_else(|_| "???????".to_string());
-        ui::commit_created(&sha);
-        created.push((sha, commit.message.clone()));
+        }
     }
 
     ui::summary(&created);
 
     Ok(())
-}
-
-/// Move files out of the working tree into a temp directory.
-/// Returns the list of files that were actually moved.
-fn hide_files(
-    repo_root: &std::path::Path,
-    files: &[&str],
-    stash_dir: &std::path::Path,
-) -> Vec<String> {
-    let mut hidden = Vec::new();
-    for &file in files {
-        let src = repo_root.join(file);
-        if !src.exists() {
-            continue;
-        }
-        let dest = stash_dir.join(file);
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-        if std::fs::rename(&src, &dest).is_ok() {
-            hidden.push(file.to_string());
-        }
-    }
-    hidden
-}
-
-/// Move files back from the temp directory into the working tree.
-fn restore_files(repo_root: &std::path::Path, files: &[String], stash_dir: &std::path::Path) {
-    for file in files {
-        let src = stash_dir.join(file);
-        let dest = repo_root.join(file);
-        if src.exists() {
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent).ok();
-            }
-            std::fs::rename(&src, &dest).ok();
-        }
-    }
 }
 
 #[cfg(test)]
