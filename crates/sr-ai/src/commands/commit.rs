@@ -4,6 +4,7 @@ use crate::git::{GitRepo, SnapshotGuard};
 use crate::ui;
 use anyhow::{Context, Result, bail};
 use indicatif::ProgressBar;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -277,10 +278,19 @@ pub async fn run(args: &CommitArgs, backend_config: &BackendConfig) -> Result<()
         bail!(crate::error::SrAiError::Cancelled);
     }
 
+    // Pre-validate commit messages against the configured pattern
+    let invalid = validate_messages(&plan, &config.commit_pattern);
+    if !invalid.is_empty() {
+        ui::invalid_messages(&invalid);
+        if !args.yes && !ui::confirm("Continue anyway? Invalid commits will likely fail. [y/N]")? {
+            bail!(crate::error::SrAiError::Cancelled);
+        }
+    }
+
     // Execute
     execute_plan(&repo, &plan)?;
 
-    // All commits succeeded — clear the snapshot
+    // All commits succeeded (or at least some did) — clear the snapshot
     snapshot.success();
 
     Ok(())
@@ -480,12 +490,43 @@ fn format_done_detail(
     format!("{commits}{extra_part}{usage_part}")
 }
 
+/// Validate that all commit messages match the configured pattern.
+/// Returns a list of (index, message, error) for invalid commits.
+fn validate_messages(plan: &CommitPlan, commit_pattern: &str) -> Vec<(usize, String, String)> {
+    let re = match Regex::new(commit_pattern) {
+        Ok(re) => re,
+        Err(e) => {
+            // If the pattern itself is invalid, report all commits as invalid
+            return plan
+                .commits
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (i + 1, c.message.clone(), format!("invalid pattern: {e}")))
+                .collect();
+        }
+    };
+
+    plan.commits
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| !re.is_match(&c.message))
+        .map(|(i, c)| {
+            (
+                i + 1,
+                c.message.clone(),
+                format!("does not match pattern: {commit_pattern}"),
+            )
+        })
+        .collect()
+}
+
 fn execute_plan(repo: &GitRepo, plan: &CommitPlan) -> Result<()> {
     // Unstage everything first
     repo.reset_head()?;
 
     let total = plan.commits.len();
     let mut created: Vec<(String, String)> = Vec::new();
+    let mut failed: Vec<(usize, String, String)> = Vec::new();
 
     for (i, commit) in plan.commits.iter().enumerate() {
         ui::commit_start(i + 1, total, &commit.message);
@@ -513,16 +554,32 @@ fn execute_plan(repo: &GitRepo, plan: &CommitPlan) -> Result<()> {
 
         // Create commit (only if there are staged files)
         if repo.has_staged_after_add()? {
-            repo.commit(&full_message)?;
-            let sha = repo.head_short().unwrap_or_else(|_| "???????".to_string());
-            ui::commit_created(&sha);
-            created.push((sha, commit.message.clone()));
+            match repo.commit(&full_message) {
+                Ok(()) => {
+                    let sha = repo.head_short().unwrap_or_else(|_| "???????".to_string());
+                    ui::commit_created(&sha);
+                    created.push((sha, commit.message.clone()));
+                }
+                Err(e) => {
+                    ui::commit_failed(&format!("{e:#}"));
+                    failed.push((i + 1, commit.message.clone(), format!("{e:#}")));
+                    // Unstage files from the failed commit so the next commit starts clean
+                    repo.reset_head()?;
+                }
+            }
         } else {
             ui::commit_skipped();
         }
     }
 
     ui::summary(&created);
+
+    if !failed.is_empty() {
+        ui::failed_commits(&failed);
+        if created.is_empty() {
+            bail!("all {} commits failed", failed.len());
+        }
+    }
 
     Ok(())
 }
@@ -593,5 +650,83 @@ mod tests {
         assert!(result.commits[0].files.contains(&"b.rs".to_string()));
         assert_eq!(result.commits[1].message, "docs: update readme");
         assert_eq!(result.commits[1].order, Some(2));
+    }
+
+    #[test]
+    fn validate_messages_all_valid() {
+        let plan = CommitPlan {
+            commits: vec![
+                PlannedCommit {
+                    order: Some(1),
+                    message: "feat: add foo".into(),
+                    body: None,
+                    footer: None,
+                    files: vec![],
+                },
+                PlannedCommit {
+                    order: Some(2),
+                    message: "fix(core): null check".into(),
+                    body: None,
+                    footer: None,
+                    files: vec![],
+                },
+            ],
+        };
+
+        let pattern = sr_core::commit::DEFAULT_COMMIT_PATTERN;
+        let invalid = validate_messages(&plan, pattern);
+        assert!(invalid.is_empty());
+    }
+
+    #[test]
+    fn validate_messages_catches_invalid() {
+        let plan = CommitPlan {
+            commits: vec![
+                PlannedCommit {
+                    order: Some(1),
+                    message: "feat: add foo".into(),
+                    body: None,
+                    footer: None,
+                    files: vec![],
+                },
+                PlannedCommit {
+                    order: Some(2),
+                    message: "not a conventional commit".into(),
+                    body: None,
+                    footer: None,
+                    files: vec![],
+                },
+                PlannedCommit {
+                    order: Some(3),
+                    message: "fix: valid one".into(),
+                    body: None,
+                    footer: None,
+                    files: vec![],
+                },
+            ],
+        };
+
+        let pattern = sr_core::commit::DEFAULT_COMMIT_PATTERN;
+        let invalid = validate_messages(&plan, pattern);
+        assert_eq!(invalid.len(), 1);
+        assert_eq!(invalid[0].0, 2); // 1-indexed
+        assert_eq!(invalid[0].1, "not a conventional commit");
+    }
+
+    #[test]
+    fn validate_messages_invalid_pattern() {
+        let plan = CommitPlan {
+            commits: vec![PlannedCommit {
+                order: Some(1),
+                message: "feat: add foo".into(),
+                body: None,
+                footer: None,
+                files: vec![],
+            }],
+        };
+
+        let invalid = validate_messages(&plan, "[invalid regex");
+        assert_eq!(invalid.len(), 1);
+        assert!(invalid[0].2.contains("invalid pattern"));
     }
 }
