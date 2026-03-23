@@ -24,3 +24,6 @@ crossterm = { workspace = true }
 indicatif = { workspace = true }
 async-trait = { workspace = true }
 dirs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

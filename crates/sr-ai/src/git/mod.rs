@@ -525,3 +525,210 @@ impl Drop for SnapshotGuard<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// Create a temporary git repo with an initial commit and return a GitRepo.
+    fn temp_repo() -> (tempfile::TempDir, GitRepo) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+
+        let git = |args: &[&str]| {
+            Command::new("git")
+                .args(["-C", root.to_str().unwrap()])
+                .args(args)
+                .output()
+                .unwrap()
+        };
+
+        git(&["init"]);
+        git(&["config", "user.email", "test@test.com"]);
+        git(&["config", "user.name", "Test"]);
+        // Initial commit so HEAD exists
+        fs::write(root.join("init.txt"), "init").unwrap();
+        git(&["add", "init.txt"]);
+        git(&["commit", "-m", "initial"]);
+
+        let repo = GitRepo { root };
+        (dir, repo)
+    }
+
+    #[test]
+    fn snapshot_creates_manifest_with_staged_files() {
+        let (_dir, repo) = temp_repo();
+
+        // Create and stage a new file
+        fs::write(repo.root.join("new.go"), "package main").unwrap();
+        repo.git(&["add", "new.go"]).unwrap();
+
+        let snap_dir = repo.snapshot_working_tree().unwrap();
+
+        // Manifest should exist
+        let manifest_path = snap_dir.join("manifest.json");
+        assert!(manifest_path.exists(), "manifest.json should exist");
+
+        let data = fs::read_to_string(&manifest_path).unwrap();
+        assert!(data.contains("new.go"), "manifest should list new.go");
+        assert!(
+            data.contains("\"staged\": true"),
+            "new.go should be marked staged"
+        );
+
+        // File copy should exist
+        assert!(
+            snap_dir.join("files/new.go").exists(),
+            "file content should be copied"
+        );
+        assert_eq!(
+            fs::read_to_string(snap_dir.join("files/new.go")).unwrap(),
+            "package main"
+        );
+
+        // HEAD ref should be recorded
+        assert!(snap_dir.join("head_ref").exists());
+
+        repo.clear_snapshot();
+    }
+
+    #[test]
+    fn snapshot_restore_recovers_staged_new_files() {
+        let (_dir, repo) = temp_repo();
+
+        // Stage two new files
+        fs::write(repo.root.join("a.go"), "package a").unwrap();
+        fs::write(repo.root.join("b.go"), "package b").unwrap();
+        repo.git(&["add", "a.go", "b.go"]).unwrap();
+
+        repo.snapshot_working_tree().unwrap();
+
+        // Simulate what execute_plan does: reset head, stage partially, commit
+        repo.reset_head().unwrap();
+        repo.git(&["add", "a.go"]).unwrap();
+        repo.git(&["commit", "-m", "partial"]).unwrap();
+
+        // Now restore — should undo the partial commit and recover both files staged
+        repo.restore_snapshot().unwrap();
+
+        // Both files should exist
+        assert!(repo.root.join("a.go").exists());
+        assert!(repo.root.join("b.go").exists());
+        assert_eq!(
+            fs::read_to_string(repo.root.join("a.go")).unwrap(),
+            "package a"
+        );
+        assert_eq!(
+            fs::read_to_string(repo.root.join("b.go")).unwrap(),
+            "package b"
+        );
+
+        // Both should be staged
+        let staged = repo.git(&["diff", "--cached", "--name-only"]).unwrap();
+        assert!(staged.contains("a.go"), "a.go should be re-staged");
+        assert!(staged.contains("b.go"), "b.go should be re-staged");
+
+        // The partial commit should be gone
+        let log = repo.git(&["log", "--oneline"]).unwrap();
+        assert!(
+            !log.contains("partial"),
+            "partial commit should be undone by HEAD reset"
+        );
+
+        repo.clear_snapshot();
+    }
+
+    #[test]
+    fn snapshot_restore_with_dirty_index_does_not_conflict() {
+        let (_dir, repo) = temp_repo();
+
+        // Stage a new file
+        fs::write(repo.root.join("file.rs"), "fn main() {}").unwrap();
+        repo.git(&["add", "file.rs"]).unwrap();
+
+        repo.snapshot_working_tree().unwrap();
+
+        // Simulate partial staging left by a failed execute_plan
+        repo.reset_head().unwrap();
+        repo.git(&["add", "file.rs"]).unwrap();
+        // Don't commit — index is dirty with the same file
+
+        // Restore should NOT fail (this was the original bug)
+        let result = repo.restore_snapshot();
+        assert!(
+            result.is_ok(),
+            "restore should succeed with dirty index: {result:?}"
+        );
+
+        assert_eq!(
+            fs::read_to_string(repo.root.join("file.rs")).unwrap(),
+            "fn main() {}"
+        );
+
+        repo.clear_snapshot();
+    }
+
+    #[test]
+    fn snapshot_handles_modified_files() {
+        let (_dir, repo) = temp_repo();
+
+        // Modify an existing tracked file
+        fs::write(repo.root.join("init.txt"), "modified content").unwrap();
+        repo.git(&["add", "init.txt"]).unwrap();
+
+        repo.snapshot_working_tree().unwrap();
+
+        // Simulate: reset and make a different change
+        repo.reset_head().unwrap();
+        fs::write(repo.root.join("init.txt"), "wrong content").unwrap();
+
+        // Restore should bring back the original modified content
+        repo.restore_snapshot().unwrap();
+
+        assert_eq!(
+            fs::read_to_string(repo.root.join("init.txt")).unwrap(),
+            "modified content"
+        );
+
+        repo.clear_snapshot();
+    }
+
+    #[test]
+    fn snapshot_guard_restores_on_drop() {
+        let (_dir, repo) = temp_repo();
+
+        fs::write(repo.root.join("guarded.txt"), "important").unwrap();
+        repo.git(&["add", "guarded.txt"]).unwrap();
+
+        {
+            let _guard = SnapshotGuard::new(&repo).unwrap();
+            // Simulate failure: reset and delete the file
+            repo.reset_head().unwrap();
+            fs::remove_file(repo.root.join("guarded.txt")).ok();
+            // Guard drops here without calling success()
+        }
+
+        // File should be restored
+        assert!(repo.root.join("guarded.txt").exists());
+        assert_eq!(
+            fs::read_to_string(repo.root.join("guarded.txt")).unwrap(),
+            "important"
+        );
+    }
+
+    #[test]
+    fn snapshot_guard_clears_on_success() {
+        let (_dir, repo) = temp_repo();
+
+        fs::write(repo.root.join("ok.txt"), "data").unwrap();
+        repo.git(&["add", "ok.txt"]).unwrap();
+
+        let guard = SnapshotGuard::new(&repo).unwrap();
+        assert!(repo.has_snapshot());
+        guard.success();
+
+        // Snapshot should be cleared
+        assert!(!repo.has_snapshot());
+    }
+}
