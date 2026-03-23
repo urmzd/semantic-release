@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.1 (2026-03-23)
+
+### Bug Fixes
+
+- **commit**: track snapshot status during dry-run ([3ca64c5](https://github.com/urmzd/sr/commit/3ca64c53054266cf2e1492a20241691cea7b7fa5))
+
+### Documentation
+
+- **showcase**: update commit demo assets ([552f539](https://github.com/urmzd/sr/commit/552f53962fd24f7a801c7e4850f49dada9377a64))
+- **readme**: add all showcase examples to README ([0a0b1b7](https://github.com/urmzd/sr/commit/0a0b1b738e72b7fdc6d19d054c224b7d9bdea816))
+- **demo**: add hidden git reset step to demo script ([9bec5cf](https://github.com/urmzd/sr/commit/9bec5cf14b2ec69dca035cb9162b2fa38ea5cf41))
+- **showcase**: update sr commit demo assets ([c505c3f](https://github.com/urmzd/sr/commit/c505c3fc30c5d40ecb5d7024afee39f9c1aa8ed3))
+
+[Full Changelog](https://github.com/urmzd/sr/compare/v2.4.0...v2.4.1)
+
+
 ## 2.4.0 (2026-03-23)
 
 ### Features
