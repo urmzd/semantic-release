@@ -18,6 +18,10 @@
 - [crates/sr-github/src/lib.rs](https://github.com/urmzd/sr/blob/main/crates/sr-github/src/lib.rs): GitHub REST API provider
 - [crates/sr-cli/src/main.rs](https://github.com/urmzd/sr/blob/main/crates/sr-cli/src/main.rs): CLI entry point
 
+## Guides
+
+- Branch protection with signed commits: use a GitHub App + repository rulesets. See the "Branch Protection" section in the README.
+
 ## Optional
 
 - [CONTRIBUTING](https://github.com/urmzd/sr/blob/main/CONTRIBUTING.md): How to contribute
