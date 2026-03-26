@@ -25,14 +25,23 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SR_RELEASER_APP_ID }}
+          private-key: ${{ secrets.SR_RELEASER_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure git identity
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "sr-releaser[bot]"
+          git config user.email "sr-releaser[bot]@users.noreply.github.com"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -44,7 +53,7 @@ jobs:
       - name: Run sr release
         id: sr
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -uo pipefail
           set +e
@@ -115,6 +124,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       matrix:
         include:
@@ -170,8 +181,6 @@ jobs:
         shell: bash
 
       - name: Upload to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ needs.release.outputs.tag }}"
           if [ -f "target/${{ matrix.target }}/release/sr.exe" ]; then

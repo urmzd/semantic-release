@@ -287,6 +287,67 @@ No additional host configuration is needed — `sr` derives the API base URL fro
 2. Changelog links and compare URLs use `https://<hostname>/owner/repo/...` instead of hardcoded `github.com`.
 3. REST API calls are routed to `https://<hostname>/api/v3/...` automatically.
 
+## Branch Protection
+
+If your repository requires signed commits or restricts direct pushes to the release branch, use a **GitHub App** to authenticate `sr`. Commits pushed with a GitHub App installation token are automatically signed by GitHub and can bypass branch rulesets.
+
+### Setup
+
+**1. Create a GitHub App**
+
+- Go to **GitHub Settings → Developer settings → GitHub Apps → New GitHub App**
+- Name: e.g. `sr-bot`
+- Homepage URL: your repo URL
+- Uncheck **Webhook → Active**
+- Repository permissions: **Contents → Read & write**
+- Where can this app be installed: **Only on this account**
+- Create the app, then **Generate a private key**
+- Install the app on your repositories
+
+**2. Store secrets**
+
+Add these as repository or organization secrets:
+
+| Secret | Value |
+|--------|-------|
+| `SR_APP_ID` | The App ID (from the App's settings page) |
+| `SR_APP_PRIVATE_KEY` | The downloaded `.pem` file contents |
+
+**3. Configure repository rulesets**
+
+> Use **repository rulesets**, not legacy branch protection. Legacy branch protection does not support GitHub App bypass for signed commit requirements.
+
+- Go to **repo Settings → Rules → Rulesets → New ruleset**
+- Target branch: `main`
+- Enable: **Require signed commits**, **Require a pull request before merging**
+- Add your GitHub App to the **Bypass list**
+
+### Workflow example
+
+```yaml
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SR_APP_ID }}
+          private-key: ${{ secrets.SR_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: urmzd/sr@v2
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+```
+
 ## Quick Start
 
 ```bash
@@ -1010,11 +1071,7 @@ See the [Justfile](Justfile) for all available recipes.
 
 This project ships an [Agent Skill](https://github.com/vercel-labs/skills) for use with Claude Code, Cursor, and other compatible agents.
 
-**Install:**
-
-```sh
-npx skills add urmzd/sr
-```
+Available as portable agent skills in [`skills/`](skills/).
 
 Once installed, use `/sr` to plan, dry-run, or execute releases from conventional commits.
 
