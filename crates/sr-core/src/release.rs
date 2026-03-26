@@ -428,9 +428,7 @@ where
 
         // 8. Force-create and force-push floating tag (e.g. v3)
         if let Some(ref floating) = plan.floating_tag_name {
-            let floating_msg = format!("Floating tag for {}", plan.tag_name);
-            self.git
-                .force_create_tag(floating, &floating_msg, self.config.sign_tags)?;
+            self.git.force_create_tag(floating)?;
             self.git.force_push_tag(floating)?;
         }
 
@@ -813,12 +811,7 @@ mod tests {
             Ok("2026-01-01".into())
         }
 
-        fn force_create_tag(
-            &self,
-            name: &str,
-            _message: &str,
-            _sign: bool,
-        ) -> Result<(), ReleaseError> {
+        fn force_create_tag(&self, name: &str) -> Result<(), ReleaseError> {
             self.force_created_tags
                 .lock()
                 .unwrap()
