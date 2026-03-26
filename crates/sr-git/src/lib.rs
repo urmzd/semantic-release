@@ -293,9 +293,8 @@ impl GitRepository for NativeGitRepository {
         Ok(date)
     }
 
-    fn force_create_tag(&self, name: &str, message: &str, sign: bool) -> Result<(), ReleaseError> {
-        let flag = if sign { "-fs" } else { "-fa" };
-        self.git(&["tag", flag, name, "-m", message])?;
+    fn force_create_tag(&self, name: &str) -> Result<(), ReleaseError> {
+        self.git(&["tag", "-f", name])?;
         Ok(())
     }
 
