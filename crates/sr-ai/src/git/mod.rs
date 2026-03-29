@@ -228,20 +228,28 @@ impl GitRepo {
                 continue;
             }
             let xy = &line.as_bytes()[..2];
-            let mut path = line[3..].to_string();
-            if let Some(pos) = path.find(" -> ") {
-                path = path[pos + 4..].to_string();
-            }
+            let path = line[3..].to_string();
             let (x, y) = (xy[0], xy[1]);
-            let status = match (x, y) {
-                (b'?', b'?') => 'A',
-                (b'A', _) | (_, b'A') => 'A',
-                (b'D', _) | (_, b'D') => 'D',
-                (b'R', _) | (_, b'R') => 'R',
-                (b'M', _) | (_, b'M') | (b'T', _) | (_, b'T') => 'M',
-                _ => '~',
-            };
-            map.insert(path, status);
+            let is_rename = matches!((x, y), (b'R', _) | (_, b'R'));
+            if is_rename {
+                if let Some(pos) = path.find(" -> ") {
+                    let old_path = path[..pos].to_string();
+                    let new_path = path[pos + 4..].to_string();
+                    map.insert(old_path, 'D');
+                    map.insert(new_path, 'R');
+                } else {
+                    map.insert(path, 'R');
+                }
+            } else {
+                let status = match (x, y) {
+                    (b'?', b'?') => 'A',
+                    (b'A', _) | (_, b'A') => 'A',
+                    (b'D', _) | (_, b'D') => 'D',
+                    (b'M', _) | (_, b'M') | (b'T', _) | (_, b'T') => 'M',
+                    _ => '~',
+                };
+                map.insert(path, status);
+            }
         }
         Ok(map)
     }
@@ -730,5 +738,31 @@ mod tests {
 
         // Snapshot should be cleared
         assert!(!repo.has_snapshot());
+    }
+
+    #[test]
+    fn file_statuses_includes_both_sides_of_rename() {
+        let (_dir, repo) = temp_repo();
+
+        // Create and commit a file
+        fs::write(repo.root.join("old_name.txt"), "content").unwrap();
+        repo.git(&["add", "old_name.txt"]).unwrap();
+        repo.git(&["commit", "-m", "add old_name"]).unwrap();
+
+        // Rename it via git mv
+        repo.git(&["mv", "old_name.txt", "new_name.txt"]).unwrap();
+
+        let statuses = repo.file_statuses().unwrap();
+
+        assert_eq!(
+            statuses.get("old_name.txt").copied(),
+            Some('D'),
+            "old path should appear as deleted"
+        );
+        assert_eq!(
+            statuses.get("new_name.txt").copied(),
+            Some('R'),
+            "new path should appear as renamed"
+        );
     }
 }
