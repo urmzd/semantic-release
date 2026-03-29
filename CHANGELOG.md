@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.4 (2026-03-29)
+
+### Bug Fixes
+
+- **git**: properly track both paths in file rename operations (#5) ([4bb39e8](https://github.com/urmzd/sr/commit/4bb39e8580797458c1016b1ac32149c91a5658b6))
+
+[Full Changelog](https://github.com/urmzd/sr/compare/v2.4.3...v2.4.4)
+
+
 ## 2.4.3 (2026-03-27)
 
 ### Bug Fixes
