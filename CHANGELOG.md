@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.4.5 (2026-03-30)
+
+### Bug Fixes
+
+- sync floating tag releases with versioned release assets ([e6b41e2](https://github.com/urmzd/sr/commit/e6b41e22444bb73a276731c442c863bad517c7c3))
+
+### Miscellaneous
+
+- **deps**: bump actions/checkout from 4 to 6 ([7c86a5c](https://github.com/urmzd/sr/commit/7c86a5c0c8d7c712db9a5f024ee6683d786e7f69))
+
+[Full Changelog](https://github.com/urmzd/sr/compare/v2.4.4...v2.4.5)
+
+
 ## 2.4.4 (2026-03-29)
 
 ### Bug Fixes
