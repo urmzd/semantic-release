@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="https://github.com/urmzd/sr/actions/workflows/ci.yml"><img src="https://github.com/urmzd/sr/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://crates.io/crates/sr"><img src="https://img.shields.io/crates/v/sr" alt="crates.io"></a>
+  <a href="https://crates.io/crates/sr-cli"><img src="https://img.shields.io/crates/v/sr-cli" alt="crates.io"></a>
 </p>
 
 ## Showcase
