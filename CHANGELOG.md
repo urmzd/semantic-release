@@ -2,6 +2,11 @@
 
 ## 2.4.5 (2026-03-30)
 
+[Full Changelog](https://github.com/urmzd/sr/compare/v2.4.5...v2.4.5)
+
+
+## 2.4.5 (2026-03-30)
+
 ### Bug Fixes
 
 - sync floating tag releases with versioned release assets ([e6b41e2](https://github.com/urmzd/sr/commit/e6b41e22444bb73a276731c442c863bad517c7c3))
