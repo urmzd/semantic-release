@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "2.4.5"
+version = "2.4.6"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/urmzd/sr"
@@ -12,10 +12,10 @@ homepage = "https://github.com/urmzd/sr"
 
 [workspace.dependencies]
 # Internal crates
-sr-core = { path = "crates/sr-core", version = "2.4.5" }
-sr-git = { path = "crates/sr-git", version = "2.4.5" }
-sr-github = { path = "crates/sr-github", version = "2.4.5" }
-sr-ai = { path = "crates/sr-ai", version = "2.4.5" }
+sr-core = { path = "crates/sr-core", version = "2.4.6" }
+sr-git = { path = "crates/sr-git", version = "2.4.6" }
+sr-github = { path = "crates/sr-github", version = "2.4.6" }
+sr-ai = { path = "crates/sr-ai", version = "2.4.6" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

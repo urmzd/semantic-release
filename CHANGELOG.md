@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.4.6 (2026-03-30)
+
+### Bug Fixes
+
+- **readme**: correct crates.io badge to reference sr-cli ([51a9d79](https://github.com/urmzd/sr/commit/51a9d79f102feebc3e301f6ca676ac9d066ace48))
+
+### Documentation
+
+- **readme**: add crates.io version badge ([ee0d325](https://github.com/urmzd/sr/commit/ee0d3252e27e3e7aea1cab9859c425a2801111c8))
+
+[Full Changelog](https://github.com/urmzd/sr/compare/v2.4.5...v2.4.6)
+
+
 ## 2.4.5 (2026-03-30)
 
 [Full Changelog](https://github.com/urmzd/sr/compare/v2.4.5...v2.4.5)
